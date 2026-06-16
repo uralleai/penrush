@@ -1,0 +1,33 @@
+# --- Build artifacts (never committed; release artifacts come from CI per docs/BUILD-PLAN.md chunk 4) ---
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+/penrush
+/penrush-hook
+/dist/
+/build/
+
+# --- Go test / coverage output ---
+*.test
+*.out
+coverage.*
+*.prof
+
+# --- Local runtime state (~/.penrush/ analogue; never part of source) ---
+.penrush/
+penrush-state/
+*.jsonl.local
+
+# --- Go workspace files (machine-local) ---
+go.work
+go.work.sum
+
+# --- OS / editor cruft ---
+.DS_Store
+Thumbs.db
+*.swp
+*~
+.idea/
+.vscode/
