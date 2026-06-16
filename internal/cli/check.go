@@ -14,8 +14,8 @@ import (
 	"github.com/penrush/penrush/internal/registry"
 )
 
-// knownEcosystems in this build. Chunk 2 adds cargo/gem/go/docker/mcp.
-var checkEcosystems = []string{"npm", "pypi", "github"}
+// checkEcosystems in this build. All eight per PRD §5.4 / arch §A.6.
+var checkEcosystems = []string{"npm", "pypi", "github", "cargo", "gem", "go", "docker", "mcp"}
 
 // runCheck is the dry-run gate command (FR-007). It runs Gate 1
 // (publication-age) against one artifact, prints the verdict, writes one
@@ -101,9 +101,17 @@ func (e *Env) resolvers(cfg *config.Config) map[string]registry.Resolver {
 		client = registry.NewClient()
 	}
 	return map[string]registry.Resolver{
+		// Chunk 1.
 		"npm":    &registry.NPM{Client: client},
 		"pypi":   &registry.PyPI{Client: client},
 		"github": &registry.GitHub{Client: client, TokenEnv: cfg.GithubTokenEnv},
+		// Chunk 2 — same hardened client; per-ecosystem rate governors live
+		// inside each resolver (cargo 1 rps, gem 10 rps). The seam is unchanged.
+		"cargo":  &registry.Cargo{Client: client},
+		"gem":    &registry.RubyGems{Client: client},
+		"go":     &registry.GoMod{Client: client},
+		"docker": &registry.Docker{Client: client},
+		"mcp":    &registry.MCP{Client: client},
 	}
 }
 

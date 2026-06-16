@@ -32,7 +32,7 @@ const (
 
 // Verdict is one gate's result for one artifact.
 type Verdict struct {
-	Gate       string   // "G1"
+	Gate       string // "G1"
 	Decision   Decision
 	Reason     string
 	AgeDays    float64   // -1 when unknown
@@ -105,12 +105,20 @@ func (e *Engine) CheckGate1(ctx context.Context, eco, name, version string) Verd
 		return Verdict{
 			Gate:     "G1",
 			Decision: Block,
-			Reason:   fmt.Sprintf("no registry client for ecosystem %q in this build (chunk 1 ships npm, pypi, github) — fail-closed. Override: penrush override add %s --reason \"...\"", eco, key),
+			Reason:   fmt.Sprintf("no registry client for ecosystem %q in this build (have: npm, pypi, github, cargo, gem, go, docker, mcp) — fail-closed. Override: penrush override add %s --reason \"...\"", eco, key),
 			AgeDays:  -1,
 		}
 	}
 	res, err := resolver.Resolve(ctx, name, version)
 	if err != nil {
+		// Approval-gated artifacts (MCP, SD.9): block pending explicit approval,
+		// NOT a fail-closed transport error. The resolver's message already
+		// carries the override (= approval) path and any registry enrichment, so
+		// it is surfaced verbatim. A preview registry being unreachable degrades
+		// to "no enrichment" inside the resolver — it never strands the CLI here.
+		if errors.Is(err, registry.ErrApprovalRequired) {
+			return Verdict{Gate: "G1", Decision: Block, Reason: err.Error(), AgeDays: -1}
+		}
 		reason := fmt.Sprintf("cannot verify %s age for %q — fail-closed (FR-003). Override: penrush override add %s --reason \"...\"", eco, name, key)
 		if errors.Is(err, registry.ErrNotFound) {
 			reason = fmt.Sprintf("%s artifact %q not found in registry — its own red flag (dependency-confusion posture, SD.10). Override: penrush override add %s --reason \"...\"", eco, name, key)

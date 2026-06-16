@@ -31,9 +31,19 @@
 
 ---
 
-## Chunk 2 — Remaining 5 ecosystems (cargo · gem · go · docker · mcp)
+## Chunk 2 — Remaining 5 ecosystems (cargo · gem · go · docker · mcp) — ✅ DONE (green)
 
 **Goal:** complete PRD §5.4 / arch §A.6 eight-ecosystem coverage by adding five `Resolver` implementations behind the *unchanged* `registry.Resolver` interface and the *unchanged* `gate.Engine` — proving the §A.6 "one module + one parser rule + fixtures, no engine change" claim.
+
+**Shipped (verified `go vet ./...` clean, `go build ./...` exit 0, `go test ./...` PASS, smoke-run on live registries):**
+- `internal/registry/cargo.go` — crates.io `versions[].created_at`; 1 rps token bucket (RFC 3463).
+- `internal/registry/rubygems.go` — RubyGems `versions/{gem}.json` `created_at` (fractional-second tolerant); 10 rps bucket; newest-first / prerelease-skip selection.
+- `internal/registry/gomod.go` — Go proxy `.info` `Time`; GOPROXY `!`-case-escaping; `@latest` rejected at resolver (lock-file rule, defense-in-depth).
+- `internal/registry/docker.go` — Docker Hub tags `tag_last_pushed`/`last_updated`+`digest`; **digest-pin = the enforced control** (passes any registry via a distant-past sentinel so age always clears); non-Hub tag-only → block with digest-discovery hint; full ref parser (`host/ns/name:tag@sha256:...`).
+- `internal/registry/mcp.go` — `ErrApprovalRequired` sentinel; **always approval-gated** (registry is preview); enrichment fetched best-effort with an independent 3s timeout and swallowed errors — an unreachable preview registry degrades to "enrichment unavailable", never a transport-block that strands the CLI.
+- `internal/registry/ratelimit.go` — stdlib-only token-bucket governor (no `golang.org/x/time/rate` dep), injectable clock/sleep for deterministic timing tests.
+- Wiring: `gate.Engine.Resolvers` carries all 8; `internal/cli/check.go` dispatch + `internal/cli/cli.go` `--help`. **Zero change to `gate/gate.go` `Verdict`/`Engine` surface** — only one `errors.Is(ErrApprovalRequired)` reason branch (same shape as the existing `ErrNotFound` branch) + two block-message string updates.
+- Tests: 6 fixture-based test files (`httptest.NewTLSServer`, zero live calls in CI), per-ecosystem happy/404/5xx/429 fail-closed paths, docker digest-pass + non-Hub-block, mcp approval+degradation, go case-escaping + `@latest` rejection, token-bucket timing (virtual clock). New-file coverage mean **92.1%** (load-bearing `Resolve` paths 80–100%).
 
 **Scope (per arch §D):**
 - `internal/registry/cargo.go` — `GET https://crates.io/api/v1/crates/{name}` → `versions[].created_at`; **1 rps token bucket** specific to this ecosystem (arch §D.4, crates.io RFC 3463 policy); identifying User-Agent already present.

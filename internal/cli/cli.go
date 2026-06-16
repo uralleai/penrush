@@ -94,7 +94,10 @@ Usage:
   penrush stats                             local-only readout of the audit log (no network)
   penrush version                           print version
 
-Ecosystems in this build: npm, pypi, github  (chunk 1; cargo/gem/go/docker/mcp land in chunk 2)
+Ecosystems in this build: npm, pypi, github, cargo, gem, go, docker, mcp
+  - docker: pin by digest (image@sha256:...) to pass on any registry; tag-only
+            Docker Hub images are age-gated; tag-only non-Hub images block.
+  - mcp:    always approval-gated (registry is preview) — approve with override.
 
 Global behavior:
   - fail-closed: an unreachable registry BLOCKS (never warn-and-pass)
