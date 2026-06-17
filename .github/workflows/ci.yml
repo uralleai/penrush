@@ -1,0 +1,115 @@
+# PenRUSH — Continuous Integration (architecture §K).
+#
+# Runs the existing green suite (vet + build + test) on every push and PR, plus
+# the reproducible-build determinism proof and govulncheck. This is what makes
+# the local green suite run in CI once the repo is pushed (GODclaude-only push,
+# PH-2-gated). Nothing here publishes or signs — that is release.yml on a tag.
+#
+# Supply-chain hardening (PenRUSH eats its own dogfood, §C.8):
+#   - Every third-party Action is pinned by FULL COMMIT SHA (not a tag). The pin
+#     comment records the human-readable tag + the resolved date (gh api, all
+#     >14 days old per the /cool down gate, verified 2026-06-17).
+#   - Least-privilege token: contents:read only; no write scopes anywhere.
+#   - No pull_request_target (it would run untrusted code with repo secrets).
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Default to read-only for the whole workflow; no job needs more.
+permissions:
+  contents: read
+
+# Cancel superseded runs on the same ref to save CI minutes.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    name: vet · build · test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      # actions/checkout v5 @ 93cb6efe1820 (committed 2025-11-13)
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+
+      # actions/setup-go v6 @ 4a3601121dd0 (committed 2026-03-17)
+      - name: Set up Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c
+        with:
+          go-version-file: go.mod
+          check-latest: false
+
+      - name: go vet
+        run: go vet ./...
+        env:
+          GOFLAGS: -mod=readonly
+
+      - name: go build
+        run: go build ./...
+        env:
+          GOFLAGS: -mod=readonly
+
+      - name: go test
+        run: go test ./...
+        env:
+          GOFLAGS: -mod=readonly
+
+  reproducible-build:
+    name: reproducible-build proof (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      # actions/checkout v5 @ 93cb6efe1820 (committed 2025-11-13)
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+
+      # actions/setup-go v6 @ 4a3601121dd0 (committed 2026-03-17)
+      - name: Set up Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c
+        with:
+          go-version-file: go.mod
+          check-latest: false
+
+      # bash is present on all three runners (Git Bash on windows-latest).
+      - name: Build twice, assert byte-identical
+        shell: bash
+        run: sh build.sh verify-reproducible
+
+  govulncheck:
+    name: govulncheck
+    runs-on: ubuntu-latest
+    steps:
+      # actions/checkout v5 @ 93cb6efe1820 (committed 2025-11-13)
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+
+      # actions/setup-go v6 @ 4a3601121dd0 (committed 2026-03-17)
+      - name: Set up Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c
+        with:
+          go-version-file: go.mod
+          check-latest: false
+
+      # govulncheck is the official Go vulnerability scanner. It is fetched at a
+      # pinned version (NOT @latest — defense-in-depth, the same /lock-file rule
+      # PenRUSH enforces on its users). Bump deliberately, through the gate.
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
+        env:
+          GOFLAGS: -mod=readonly
+
+      - name: Run govulncheck
+        run: govulncheck ./...

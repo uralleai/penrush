@@ -26,6 +26,11 @@ import (
 // is mirrored into the registry User-Agent.
 var Version = "0.1.0-dev"
 
+// Commit is the source commit the binary was built from. main.go stamps it via
+// ldflags at release time (deterministic per tag → reproducible-build-safe).
+// "unknown" means an unstamped local/dev build.
+var Commit = "unknown"
+
 // Exit codes (stable contract). 0 pass, 1 block, 2 usage/internal error.
 //
 // IMPORTANT — the Claude Code hook adapter does NOT use ExitBlock (=1): per the
@@ -144,7 +149,11 @@ func Run(e *Env) (code int) {
 	case "hook":
 		return runHook(e, e.Args[1:])
 	case "version", "--version", "-v":
-		fmt.Fprintf(e.Stdout, "penrush %s\n", Version)
+		if Commit != "" && Commit != "unknown" {
+			fmt.Fprintf(e.Stdout, "penrush %s (%s)\n", Version, Commit)
+		} else {
+			fmt.Fprintf(e.Stdout, "penrush %s\n", Version)
+		}
 		return ExitPass
 	case "help", "--help", "-h":
 		fmt.Fprintln(e.Stdout, usage)

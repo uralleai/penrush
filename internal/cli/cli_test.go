@@ -395,6 +395,43 @@ func TestVersionCommand(t *testing.T) {
 	}
 }
 
+// TestVersionCommandCommitStamp pins the release-build behavior: when the commit
+// is stamped (ldflags at release time), `version` surfaces it; when unstamped
+// ("unknown"/empty, a local/dev build), it is omitted. Reproducible-build-safe
+// stamps only (architecture §H.1) — no build timestamp is ever embedded.
+func TestVersionCommandCommitStamp(t *testing.T) {
+	origV, origC := Version, Commit
+	t.Cleanup(func() { Version, Commit = origV, origC })
+
+	cases := []struct {
+		name       string
+		version    string
+		commit     string
+		wantSubstr string
+		notSubstr  string
+	}{
+		{"stamped", "v9.9.9", "abcdef1234567890", "penrush v9.9.9 (abcdef1234567890)", ""},
+		{"unstamped-unknown", "v9.9.9", "unknown", "penrush v9.9.9", "("},
+		{"unstamped-empty", "v9.9.9", "", "penrush v9.9.9", "("},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			Version, Commit = c.version, c.commit
+			e, out, _ := newEnv(t, "version")
+			if code := Run(e); code != ExitPass {
+				t.Fatalf("version exit = %d, want %d", code, ExitPass)
+			}
+			got := strings.TrimSpace(out.String())
+			if !strings.Contains(got, c.wantSubstr) {
+				t.Fatalf("version output = %q, want substring %q", got, c.wantSubstr)
+			}
+			if c.notSubstr != "" && strings.Contains(got, c.notSubstr) {
+				t.Fatalf("version output = %q, must not contain %q", got, c.notSubstr)
+			}
+		})
+	}
+}
+
 // NO_COLOR / non-TTY behavior is decided in main.colorEnabled, but the cli
 // accent helpers must produce plain output when Color is false. Pin it so a
 // piped check is greppable.

@@ -1,0 +1,179 @@
+# PenRUSH — Release pipeline: reproducible build + SLSA L3 provenance + Sigstore
+# keyless signing (architecture §E.3, §H.1–§H.3, §C.5, §C.8).
+#
+# Trigger: a semver tag (v*). On tag:
+#   1. args            — resolve the commit SHA (deterministic stamp input).
+#   2. reproducibility — matrix build-twice byte-identical proof; release FAILS
+#                        if any platform is non-deterministic (§H.1).
+#   3. build           — matrix (os×arch) via the trusted SLSA Go builder, which
+#                        runs the build inside its isolated provenance-signing
+#                        environment and uploads each binary + its SLSA L3
+#                        provenance to the GitHub Release for the tag (§H.2).
+#   4. checksums-sign  — generate SHA-256 checksums for all artifacts and sign
+#                        them keyless with cosign (Fulcio OIDC cert + Rekor log;
+#                        NO long-lived release key exists, §C.5/§H.3). Attach the
+#                        cosign bundle to the release.
+#
+# ── Supply-chain pinning policy (PenRUSH dogfoods /cool down + /lock file) ──
+# Every third-party Action is pinned by FULL COMMIT SHA, with a comment recording
+# the tag + resolved commit date (all >14 days old, verified via gh api on
+# 2026-06-17). THE SINGLE DOCUMENTED EXCEPTION is the SLSA Go builder reusable
+# workflow, referenced by its semver TAG @v2.1.0 — NOT by SHA. This is mandatory,
+# not a lapse: the SLSA project states the builder "MUST be referenced by tag in
+# order for the slsa-verifier to be able to verify the ref of the trusted
+# builder's reusable workflow ... the build will fail if you reference it by a
+# hash" (slsa-github-generator README @v2.1.0, fetched 2026-06-17). A hash pin
+# would make the provenance UNVERIFIABLE. The tag is the security-correct pin
+# here; tracked upstream as slsa-verifier#12. See docs/RELEASE.md and SECURITY.md.
+#
+# Hardening: workflow defaults to least privilege; id-token:write (the OIDC
+# signing capability) is confined to the jobs that actually sign, never global.
+# No pull_request_target. Tag-triggered only.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+# Least-privilege default for the whole workflow. Jobs that need more request it
+# explicitly and narrowly.
+permissions:
+  contents: read
+
+jobs:
+  # ── 1. Resolve the deterministic commit stamp ──────────────────────────────
+  args:
+    name: Resolve build args
+    runs-on: ubuntu-latest
+    outputs:
+      commit: ${{ steps.vars.outputs.commit }}
+    steps:
+      # actions/checkout v5 @ 93cb6efe1820 (committed 2025-11-13)
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+      - name: Compute commit
+        id: vars
+        shell: bash
+        run: echo "commit=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+
+  # ── 2. Reproducible-build gate (release fails if any OS is non-deterministic) ─
+  reproducibility:
+    name: Reproducible-build proof (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: true
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      # actions/checkout v5 @ 93cb6efe1820 (committed 2025-11-13)
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+      # actions/setup-go v6 @ 4a3601121dd0 (committed 2026-03-17)
+      - name: Set up Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c
+        with:
+          go-version-file: go.mod
+          check-latest: false
+      - name: Build twice, assert byte-identical
+        shell: bash
+        run: sh build.sh verify-reproducible
+
+  # ── 3. Build + SLSA L3 provenance, per (os, arch), via the trusted builder ──
+  # The reusable workflow is referenced BY TAG (@v2.1.0) — see the policy note at
+  # the top of this file. It is the one and only non-SHA pin in the pipeline.
+  build:
+    name: SLSA build ${{ matrix.os }}/${{ matrix.arch }}
+    needs: [args, reproducibility]
+    permissions:
+      id-token: write # OIDC token for keyless provenance signing (Fulcio).
+      contents: write # upload the binary + provenance to the GitHub Release.
+      actions: read # read the workflow ref for provenance.
+    strategy:
+      fail-fast: true
+      matrix:
+        os: [linux, darwin, windows]
+        arch: [amd64, arm64]
+    uses: slsa-framework/slsa-github-generator/.github/workflows/builder_go_slsa3.yml@v2.1.0
+    with:
+      go-version-file: go.mod
+      config-file: .slsa-goreleaser.yml
+      # Inject the deterministic commit into .Env.COMMIT (consumed by the ldflags
+      # in .slsa-goreleaser.yml). GOOS/GOARCH are taken from the matrix so the
+      # builder produces the right cross-compiled artifact per entry.
+      evaluated-envs: "COMMIT:${{ needs.args.outputs.commit }}, GOOS:${{ matrix.os }}, GOARCH:${{ matrix.arch }}"
+      upload-assets: true
+
+  # ── 4. Checksums + Sigstore keyless signing, attached to the release ────────
+  checksums-sign:
+    name: Checksums + cosign keyless sign
+    needs: [build]
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # OIDC identity for cosign keyless (Fulcio/Rekor).
+      contents: write # attach the checksums + cosign bundle to the release.
+    steps:
+      # actions/checkout v5 @ 93cb6efe1820 (committed 2025-11-13)
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+
+      # Pull the binaries the SLSA builder attached to this tag's release so we
+      # can checksum + sign them. gh is preinstalled on GitHub runners.
+      - name: Download release binaries
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          # Download only the platform binaries (penrush-<os>-<arch>[.exe]); the
+          # SLSA provenance files (*.intoto.jsonl) are already signed upstream.
+          gh release download "$TAG" \
+            --pattern 'penrush-*' \
+            --dir dist \
+            --skip-existing
+          # Exclude any provenance files that matched the glob, keep binaries.
+          find dist -name '*.intoto.jsonl' -delete || true
+          ls -la dist
+
+      - name: Generate SHA-256 checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd dist
+          sha256sum penrush-* > checksums.txt
+          echo "── checksums.txt ──"
+          cat checksums.txt
+
+      # sigstore/cosign-installer v4.1.2 @ 6f9f17788090 (committed 2026-05-07)
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6
+
+      - name: Cosign keyless-sign the checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd dist
+          # Keyless: --yes accepts the ephemeral Fulcio cert bound to this
+          # workflow's OIDC identity; the signing event is logged in Rekor. The
+          # bundle carries signature + cert + transparency proof for offline
+          # verify with `cosign verify-blob` (see docs/RELEASE.md).
+          cosign sign-blob --yes \
+            --bundle checksums.txt.cosign.bundle \
+            checksums.txt
+          echo "── signed: checksums.txt → checksums.txt.cosign.bundle ──"
+
+      - name: Attach checksums + signature to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd dist
+          gh release upload "$TAG" \
+            checksums.txt \
+            checksums.txt.cosign.bundle \
+            --clobber
