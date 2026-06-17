@@ -1,0 +1,56 @@
+#!/bin/sh
+# penrush-hook — Claude Code PreToolUse locator shim (architecture §F.3).
+#
+# The plugin does NOT bundle the penrush binary (shipping per-platform binaries
+# inside a git-distributed plugin is bloat + opacity, and would dodge the
+# checkbox/provenance download path — §F.3). This shim locates the separately-
+# installed `penrush` binary and delegates the gate to it. It NEVER downloads
+# anything — an auto-downloading security tool would violate its own thesis.
+#
+# THREE-STATE behavior (§F.3):
+#   1. penrush on PATH                -> record activation, exec the gate.
+#   2. penrush ABSENT + never-active  -> NON-BLOCKING notice (exit 0). A user who
+#                                        installed the plugin but not the binary
+#                                        has not finished setup; bricking every
+#                                        Bash call before the tool exists is
+#                                        install-flow hostage-taking.
+#   3. penrush ABSENT + was-active    -> BLOCK (exit 2). A previously-working
+#                                        gate that vanished is an incident, not
+#                                        an onboarding state.
+#
+# EXIT-CODE CONTRACT (hooks reference, fact-checked 2026-06-16):
+#   exit 2 = block (stderr -> Claude); exit 0 = proceed / parse stdout JSON;
+#   ANY OTHER exit = NON-BLOCKING (tool proceeds). So this shim only ever exits
+#   0 (proceed / non-blocking notice) or 2 (block). It must NEVER exit 1 on a
+#   block path — that would be a silent bypass (§C.6).
+
+set -u
+
+# Resolve the PenRUSH home (mirrors internal/penrushdir): $PENRUSH_HOME or
+# ~/.penrush. Used only for the activation marker.
+PENRUSH_HOME="${PENRUSH_HOME:-$HOME/.penrush}"
+ACTIVATED_MARKER="$PENRUSH_HOME/.activated"
+
+# Locate the binary. `command -v` is POSIX and does not execute it.
+if PENRUSH_BIN="$(command -v penrush 2>/dev/null)" && [ -n "$PENRUSH_BIN" ]; then
+    # State 1: present. Record activation (best-effort — a failure to write the
+    # marker must not change the gate decision), then hand off. exec replaces
+    # this process so penrush's own exit code (0 + JSON, or 2) is what Claude
+    # Code sees — the shim adds no exit-code translation layer.
+    mkdir -p "$PENRUSH_HOME" 2>/dev/null || true
+    : > "$ACTIVATED_MARKER" 2>/dev/null || true
+    exec "$PENRUSH_BIN" hook claude-code
+fi
+
+# Binary absent.
+if [ -f "$ACTIVATED_MARKER" ]; then
+    # State 3: the gate worked before and is now gone. Treat as an incident and
+    # fail closed (block).
+    printf '[penrush] BLOCK the penrush gate binary is missing but was active before — refusing to let installs through ungated (fail-closed). Reinstall penrush, then retry. Verify-and-download recipe: https://penbag.store\n' 1>&2
+    exit 2
+fi
+
+# State 2: never activated — onboarding. Non-blocking notice; the Bash call
+# proceeds (exit 0). No JSON on stdout means the normal permission flow applies.
+printf '[penrush] notice: the penrush plugin is enabled but the gate binary is not installed yet, so this Bash command is NOT being gated. Install the binary to activate supply-chain gating. Download + verification recipe: https://penbag.store\n' 1>&2
+exit 0

@@ -1,0 +1,10 @@
+{
+  "name": "penrush",
+  "version": "0.1.0",
+  "description": "Pre-install supply-chain gate — don't rush to download. Gates npm/PyPI/cargo/RubyGems/Go/GitHub/Docker/MCP installs on a publication-age cool-down before Claude runs them.",
+  "author": {
+    "name": "PenBag / PSS"
+  },
+  "homepage": "https://penbag.store",
+  "license": "Apache-2.0"
+}

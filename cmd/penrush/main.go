@@ -27,6 +27,7 @@ func main() {
 		Args:   os.Args[1:],
 		Stdout: os.Stdout,
 		Stderr: os.Stderr,
+		Stdin:  os.Stdin, // PreToolUse payload for `hook claude-code`
 		Color:  colorEnabled(),
 	}
 	os.Exit(cli.Run(env))

@@ -26,8 +26,12 @@ import (
 // is mirrored into the registry User-Agent.
 var Version = "0.1.0-dev"
 
-// Exit codes (stable contract; the hook adapter in a later chunk depends on
-// these). 0 pass, 1 block, 2 usage/internal error.
+// Exit codes (stable contract). 0 pass, 1 block, 2 usage/internal error.
+//
+// IMPORTANT — the Claude Code hook adapter does NOT use ExitBlock (=1): per the
+// PreToolUse contract, exit 1 is NON-blocking (the tool call proceeds), so the
+// hook path returns exit 0 + a deny JSON (primary) or ExitHookBlock (=2, the
+// guaranteed block) for its fail-closed fallback. See hook.go.
 const (
 	ExitPass     = 0
 	ExitBlock    = 1
@@ -53,7 +57,14 @@ type Env struct {
 	// at a stub that always errors, to exercise the fail-closed path) without
 	// any real network access. Production leaves it nil.
 	Resolvers map[string]registry.Resolver
+	// Stdin is the PreToolUse payload reader for `hook claude-code`. main.go
+	// wires it to os.Stdin; tests supply a bytes.Reader. nil means no stdin
+	// (the hook treats that as a parse failure → fail-closed).
+	Stdin io.Reader
 }
+
+// stdin returns the injected stdin reader (nil when unset).
+func (e *Env) stdin() io.Reader { return e.Stdin }
 
 func (e *Env) now() time.Time {
 	if e.Now != nil {
@@ -92,6 +103,7 @@ Usage:
   penrush check <ecosystem>:<pkg>[@version]  (FR-007 colon form — equivalent)
   penrush override add <key> --reason "..."  add an override (key = <ecosystem>:<artifact>)
   penrush stats                             local-only readout of the audit log (no network)
+  penrush hook claude-code                  PreToolUse hook adapter (reads a payload on stdin)
   penrush version                           print version
 
 Ecosystems in this build: npm, pypi, github, cargo, gem, go, docker, mcp
@@ -129,6 +141,8 @@ func Run(e *Env) (code int) {
 		return runOverride(e, e.Args[1:])
 	case "stats":
 		return runStats(e, e.Args[1:])
+	case "hook":
+		return runHook(e, e.Args[1:])
 	case "version", "--version", "-v":
 		fmt.Fprintf(e.Stdout, "penrush %s\n", Version)
 		return ExitPass
