@@ -2,13 +2,15 @@
 # PenRUSH local build + reproducible-build verifier (architecture §H.1).
 #
 # This script encodes the SAME deterministic build invocation the SLSA Go
-# builder runs in CI (see .slsa-goreleaser.yml), so a developer can prove
-# locally that the build is byte-for-byte reproducible — the property the
+# builder runs in CI (see .slsa-goreleaser/<os>-<arch>.yml), so a developer can
+# prove locally that the build is byte-for-byte reproducible — the property the
 # two-runner CI job (.github/workflows/release.yml) enforces on every release.
 #
 # Reproducibility pillars (go.dev/blog/rebuild):
-#   CGO_ENABLED=0  +  -trimpath  +  -ldflags "-s -w -buildid= -X main.version -X main.commit"
-# A build timestamp is deliberately NOT embedded.
+#   CGO_ENABLED=0  +  -trimpath  +  -buildvcs=false
+#     +  -ldflags "-s -w -buildid= -X main.version -X main.commit"
+# -buildvcs=false drops Go's automatic VCS stamping so reproducibility does not
+# depend on .git presence/state. A build timestamp is deliberately NOT embedded.
 #
 # Subcommands:
 #   build              build penrush for the host OS/arch into ./dist
@@ -30,8 +32,9 @@ COMMIT="${COMMIT:-$(git -C "$(dirname "$0")" rev-parse HEAD 2>/dev/null || echo 
 DIST="${DIST:-dist}"
 PKG="./cmd/penrush"
 
-# Identical to .slsa-goreleaser.yml ldflags. Keep these two in lock-step: any
-# change here must mirror there (and vice versa) or local proof diverges from CI.
+# Identical to the ldflags in every .slsa-goreleaser/<os>-<arch>.yml. Keep these
+# in lock-step: any change here must mirror there (and the -buildvcs=false /
+# -trimpath flags) or local proof diverges from CI.
 ldflags() {
   printf -- '-s -w -buildid= -X main.version=%s -X main.commit=%s' "$1" "$2"
 }
@@ -53,8 +56,13 @@ do_build() {
   v="$2"
   c="$3"
   mkdir -p "$(dirname "$out")"
+  # -buildvcs=false disables Go's automatic VCS stamping (vcs.revision/vcs.time/
+  # vcs.modified) so the artifact does NOT depend on .git presence/state — an
+  # independent rebuild from a source tarball or `git archive` export is then
+  # byte-identical to the shipped binary (§H.1). The release commit is stamped
+  # explicitly via -ldflags, so the auto-stamp carries no extra information.
   CGO_ENABLED=0 GOFLAGS=-mod=readonly \
-    go build -trimpath -ldflags "$(ldflags "$v" "$c")" -o "$out" "$PKG"
+    go build -trimpath -buildvcs=false -ldflags "$(ldflags "$v" "$c")" -o "$out" "$PKG"
 }
 
 cmd_build() {

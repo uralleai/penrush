@@ -19,11 +19,11 @@ import (
 // deterministic for a given release tag (the tag string, and the commit it
 // points at), so embedding them does NOT compromise the reproducible build
 // (architecture §H.1) — unlike a build timestamp, which is deliberately NOT
-// embedded for exactly that reason. The release pipeline stamps these in
-// .slsa-goreleaser.yml; local reproducible-build verification uses the same
-// ldflags (see build.sh / make verify-reproducible).
+// embedded for exactly that reason. The release pipeline stamps these in the
+// per-target .slsa-goreleaser/<os>-<arch>.yml configs; local reproducible-build
+// verification uses the same ldflags (see build.sh / make verify-reproducible).
 //
-//	go build -trimpath -ldflags "-s -w -buildid= -X main.version=v0.1.0 -X main.commit=<sha>" ./cmd/penrush
+//	go build -trimpath -buildvcs=false -ldflags "-s -w -buildid= -X main.version=v0.1.0 -X main.commit=<sha>" ./cmd/penrush
 var (
 	version = "0.1.0-dev"
 	commit  = "unknown"

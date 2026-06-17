@@ -1,0 +1,51 @@
+# PenRUSH — SLSA Go builder config: darwin/arm64 (architecture §H.1 / §H.2).
+#
+# Per-target config files are the schema-mandated multi-platform pattern for the
+# trusted SLSA Go builder. The build target is selected by the `goos:`/`goarch:`
+# fields BELOW — NOT by evaluated-envs — and the `{{ .Os }}`/`{{ .Arch }}` binary
+# name templates are filled from those same two fields. Source of truth:
+#   https://github.com/slsa-framework/slsa-github-generator/blob/v2.1.0/internal/builders/go/README.md
+#   "The OS to compile for. GOOS env variable will be set to this value."
+#   "{{ .Os }} will be replaced by goos field in the config file."
+#   (fact-checked 2026-06-17)
+#
+# Reproducibility (§H.1) rests on four pillars, all encoded here + in go.mod:
+#   1. CGO_ENABLED=0            — no host C toolchain enters the build.
+#   2. flags: -trimpath         — strips absolute filesystem paths.
+#   3. flags: -buildvcs=false   — disables Go's automatic VCS stamping so the
+#      binary does NOT embed vcs.revision/vcs.time/vcs.modified. Without this,
+#      an independent rebuild from a source tarball / `git archive` export / a
+#      clone with a different .git produces a DIFFERENT artifact, defeating the
+#      §H.1 byte-identical guarantee. The release commit is stamped explicitly
+#      via -ldflags below, so dropping the VCS auto-stamp loses no information.
+#   4. ldflags: -s -w -buildid= — strips the symbol table, DWARF, and the
+#      non-deterministic build ID. Only deterministic stamps are embedded:
+#      {{ .Tag }} (the release tag) and .Env.COMMIT (injected by the workflow).
+#      A build TIMESTAMP is deliberately never embedded.
+#
+# Keep this file's env/flags/ldflags in lock-step with build.sh and every other
+# .slsa-goreleaser/*.yml — any change here must mirror there or local proof
+# diverges from CI.
+
+version: 1
+
+goos: darwin
+goarch: arm64
+
+binary: penrush-{{ .Os }}-{{ .Arch }}
+
+main: ./cmd/penrush
+
+env:
+  - CGO_ENABLED=0
+
+flags:
+  - -trimpath
+  - -buildvcs=false
+
+ldflags:
+  - "-s"
+  - "-w"
+  - "-buildid="
+  - "-X main.version={{ .Tag }}"
+  - "-X main.commit={{ .Env.COMMIT }}"

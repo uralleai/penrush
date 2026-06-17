@@ -55,6 +55,31 @@ git tag -a v0.1.0 -m "PenRUSH v0.1.0"
    logged in Rekor). The signature bundle `checksums.txt.cosign.bundle` is
    attached to the release. **No long-lived signing key exists** (§C.5 / §H.3).
 
+### The `release` Environment (OIDC signing gate, §H.3)
+
+The two jobs that hold `id-token: write` — `build` (SLSA provenance signing) and
+`checksums-sign` (cosign keyless) — are both bound to a **protected GitHub
+Environment named `release`**. Holding `v*`-tag push rights alone is **not**
+sufficient to mint a Fulcio certificate or SLSA provenance: the Environment's
+protection rules interpose a human/branch-policy gate, backstopping the STRIDE
+single-maintainer-compromise case (arch §H.3, line 401: "id-token: write confined
+to the environment-protected release job").
+
+**Required protection rules** (configure once, in repo Settings → Environments →
+`release`, before the first real tagged release):
+
+- **Deployment tag policy** — restrict to `v*` tags only (no branch deployments).
+- **Required reviewers** — at least one. Per the PSS hard rule that `git push`
+  (and therefore the tag that triggers this pipeline) is **GODclaude-only**,
+  GODclaude is the encoded reviewer; the deployment cannot proceed to the
+  signing jobs until that reviewer approves.
+- **No secrets stored** in the Environment — keyless signing uses only the
+  ephemeral OIDC token; there is deliberately no long-lived release key (§C.5).
+
+Until these rules are set, the `environment: release` reference in
+`release.yml` still creates the gate but with no reviewers it auto-approves —
+so this configuration step is a **release pre-flight item**, not optional.
+
 ### Post-release (manual)
 
 - [ ] Verify the release yourself using **Part 2** below (dogfood the recipe).
