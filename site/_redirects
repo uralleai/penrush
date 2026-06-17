@@ -1,0 +1,14 @@
+# Cloudflare Pages — redirects
+# https://developers.cloudflare.com/pages/configuration/redirects/
+#
+# Canonical host is penrush.penbag.store. The *.pages.dev preview/default host
+# is 301'd to the custom domain so there is one canonical origin (matters for
+# the same-origin CSP and for not splitting trust across two hostnames).
+# NOTE: replace <project>.pages.dev with the real Pages project subdomain when
+# the project is created (DO NOT DEPLOY yet — PH-2 gated).
+
+https://:project.pages.dev/*   https://penrush.penbag.store/:splat   301
+
+# Friendly aliases (optional, harmless if the paths exist):
+/terms        /terms.html   301
+/license      /LICENSE      301

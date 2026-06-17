@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PenRUSH — don't rush to download.</title>
+<meta name="description" content="PenRUSH is a pre-install pre-flight gate that blocks supply-chain attacks before they land. A 14-day publication-age cooldown across npm, PyPI, crates, gems, Go, and more. Open-source, runs locally, no signup.">
+
+<!-- ====================================================================
+     Content-Security-Policy — strict, self-only, zero egress.
+     PenRUSH is a supply-chain-security tool; the page must not be able to
+     load or talk to anything off-origin. Mirrored server-side in _headers.
+
+       default-src 'none'   deny everything by default, then allow-list
+       script-src  'self'   app.js only; NO inline script (none exists)
+       style-src   'self'   styles.css only; NO 'unsafe-inline' (no inline CSS)
+       font-src    'self'   the 5 vendored IBM Plex woff2
+       img-src     'self'   favicons / PWA icons / og:image
+       connect-src 'none'   no fetch/XHR/WebSocket — provably no phone-home
+       base-uri / form-action / frame-ancestors 'none' — no base hijack,
+                            no form posts, page cannot be framed (clickjacking)
+     A flip to live downloads needs no CSP change: the binary is an <a href>
+     navigation to GitHub Releases (top-level navigation, not a fetch), which
+     CSP does not restrict.
+     ==================================================================== -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; manifest-src 'self'">
+
+<!-- Open Graph / Twitter. og:image points at a self-hosted asset (no remote
+     host required for the page itself; absolute URL filled at deploy). -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="PenRUSH — don't rush to download.">
+<meta property="og:description" content="A pre-install pre-flight gate that blocks supply-chain attacks before they land.">
+<meta property="og:image" content="assets/icons/icon-512.png">
+<meta name="twitter:card" content="summary_large_image">
+
+<!-- Favicons / PWA-ish icons — all self-hosted -->
+<link rel="icon" href="assets/icons/favicon.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="32x32" href="assets/icons/favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="assets/icons/favicon-16.png">
+<link rel="apple-touch-icon" href="assets/icons/apple-touch-icon.png">
+<meta name="theme-color" content="#16191D">
+
+<!-- Stylesheet (which @imports the self-hosted fonts/fonts.css). No CDN, no third-party. -->
+<link rel="stylesheet" href="styles.css">
+</head>
+<body class="dial-animate">
+
+<a class="skip" href="#download">Skip to download</a>
+
+<!-- ===================== TOP BAR ===================== -->
+<header class="topbar">
+  <div class="wrap">
+    <a href="#top" aria-label="PenRUSH home">
+      <img src="assets/lockups/penrush-lockup-primary-horizontal.svg" alt="PenRUSH" width="200" height="60">
+    </a>
+    <nav aria-label="Primary">
+      <a href="#how">How it works</a>
+      <a href="#download">Download</a>
+      <a href="#verify">Verify</a>
+    </nav>
+  </div>
+</header>
+
+<main id="top">
+
+  <!-- ===================== 1 — HERO ===================== -->
+  <section class="hero" aria-labelledby="hero-h">
+    <div class="wrap">
+      <div class="hero-copy">
+        <p class="gauge-label">Supply-chain pre-flight gate</p>
+        <h1 id="hero-h">Don't let a fresh package <span class="accent">land before you do.</span></h1>
+        <p class="tagline">don't rush to download.</p>
+        <p class="lede">PenRUSH is a pre-install pre-flight gate that blocks supply-chain attacks before they land.</p>
+        <div class="hero-cta">
+          <a class="btn btn-primary" href="#download">Get PenRUSH</a>
+          <a class="btn" href="#how">How it works</a>
+        </div>
+      </div>
+
+      <!-- The Cooldown Dial — geometry mirrors the locked logomark
+           (r=90, stroke-width=20, 300deg sweep) incl. the two cream pause-bars.
+           Sweeps once on load. Readout sits BELOW the mark so the locked
+           logomark center (the pause-bars) stays uncovered. -->
+      <div class="hero-dial" aria-hidden="true">
+        <svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="100" cy="100" r="90" fill="none" stroke="#272C33" stroke-width="20"/>
+          <circle class="dial-ring" cx="100" cy="100" r="90" fill="none"
+                  stroke="#EFA436" stroke-width="20" stroke-linecap="butt"
+                  transform="rotate(-90 100 100)"/>
+          <rect x="85" y="75" width="8" height="50" fill="#F0EADB"/>
+          <rect x="107" y="75" width="8" height="50" fill="#F0EADB"/>
+        </svg>
+        <div class="readout">
+          <span class="num">14</span><span class="unit">day&nbsp;cooldown active</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== 2 — HOW IT WORKS ===================== -->
+  <section class="how" id="how" aria-labelledby="how-h">
+    <div class="wrap">
+      <p class="gauge-label">Mechanism</p>
+      <h2 id="how-h">The only gate is time.</h2>
+      <p class="lead muted">Most supply-chain attacks are caught within days of publication &mdash; after the malicious version is pulled, but before the next victim installs it. PenRUSH puts that window on your side. It runs locally, before a package reaches your machine, and reports the way a gauge reports a reading.</p>
+
+      <div class="grid">
+        <div class="panel">
+          <div class="idx">01 / cooldown</div>
+          <h3>14&nbsp;days, on purpose</h3>
+          <p>A package version younger than its <strong>publication age</strong> threshold doesn't install yet. Freshly published code waits in the open where the ecosystem can find problems with it &mdash; not on your disk.</p>
+        </div>
+        <div class="panel">
+          <div class="idx">02 / multi-ecosystem</div>
+          <h3>One gate, every registry</h3>
+          <p>The same pre-flight runs across <strong>npm, PyPI, crates.io, RubyGems, and Go</strong> modules. Publication age and the pinned <strong>digest</strong> are checked against each registry before a single byte is fetched.</p>
+        </div>
+        <div class="panel">
+          <div class="idx">03 / local &amp; open</div>
+          <h3>Runs locally. Open source.</h3>
+          <p>No account, no telemetry, no phone-home. PenRUSH is <strong>Apache-2.0</strong> and executes entirely on your machine. The audit trail is yours; nothing leaves it.</p>
+        </div>
+      </div>
+
+      <p class="ecosystems">gated&nbsp;ecosystems&nbsp;//&nbsp;<span>npm</span>&nbsp;&middot;&nbsp;<span>pip&nbsp;/&nbsp;PyPI</span>&nbsp;&middot;&nbsp;<span>cargo&nbsp;/&nbsp;crates.io</span>&nbsp;&middot;&nbsp;<span>gem&nbsp;/&nbsp;RubyGems</span>&nbsp;&middot;&nbsp;<span>go&nbsp;modules</span></p>
+    </div>
+  </section>
+
+  <!-- ===================== 3 — DOWNLOAD (gated) ===================== -->
+  <section class="download" id="download" aria-labelledby="dl-h">
+    <div class="wrap">
+      <div class="module">
+        <p class="gauge-label">Download</p>
+        <h2 id="dl-h">Get PenRUSH</h2>
+
+        <!-- Gate status strip — reflects RELEASE_AVAILABLE -->
+        <p class="gate-status" id="gate-status" role="status">
+          <span class="dot" aria-hidden="true"></span>
+          <span id="gate-status-text">Releases pending security audit</span>
+        </p>
+
+        <!-- Consent — LMO-cleared verbatim string (47 words). DO NOT paraphrase.
+             Source: knowledge/lmo/clearances/penrush-trademark-license-consent.md §6.2
+             Links sit adjacent to the checkbox (Specht conspicuousness). Never pre-ticked. -->
+        <label class="consent" for="consent">
+          <input type="checkbox" id="consent" name="consent">
+          <span class="consent-text">I accept the <a href="LICENSE" target="_blank" rel="noopener">Apache License 2.0</a> and the <a href="terms.html" target="_blank" rel="noopener">Terms of Use</a> for <strong>PenRUSH</strong>. I understand the software is provided <strong>&ldquo;AS IS,&rdquo; without warranty or condition of any kind</strong>, and that I use it at my own risk and in compliance with the laws that apply to me.</span>
+        </label>
+
+        <div class="download-action">
+          <!-- Inert until BOTH the consent box is checked AND RELEASE_AVAILABLE is true.
+               No real binary URL exists yet (PH-2-gated). See app.js. -->
+          <a id="download-btn" class="btn btn-primary" role="button"
+             aria-disabled="true" tabindex="-1" href="#download"
+             data-href-template="">
+            Download &mdash; awaiting security audit
+          </a>
+          <p class="consent-hint" id="consent-hint" aria-live="polite"></p>
+
+          <p class="gate-note" id="gate-note">
+            <strong>Verified, signed releases ship after PenRUSH&rsquo;s own independent security audit &mdash; by design.</strong>
+            We don&rsquo;t hand you a security tool that hasn&rsquo;t cleared a pentest first. When the audit passes, this button serves the signed binary from GitHub Releases, with the verification recipe below.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== 4 — VERIFY YOUR DOWNLOAD ===================== -->
+  <section class="verify" id="verify" aria-labelledby="vf-h">
+    <div class="wrap">
+      <p class="gauge-label">Trust, but verify</p>
+      <h2 id="vf-h">Verify every byte before you run it.</h2>
+      <p class="lead muted">Every release is reproducibly built and signed. You don&rsquo;t need an account, and there&rsquo;s no telemetry &mdash; anyone can confirm a binary was built by this repository&rsquo;s release workflow and left untampered, with three independent checks.</p>
+
+      <div class="checks">
+        <div class="check">
+          <div class="idx">Check 01</div>
+          <h3>SHA-256 checksum</h3>
+          <p>Confirm the binary matches the published <span class="mono">checksums.txt</span> &mdash; byte-for-byte, before anything runs.</p>
+        </div>
+        <div class="check">
+          <div class="idx">Check 02</div>
+          <h3>Sigstore signature</h3>
+          <p>Keyless <span class="mono">cosign</span> verification proves the checksums were signed by this repo&rsquo;s release workflow &mdash; no long-lived key exists.</p>
+        </div>
+        <div class="check">
+          <div class="idx">Check 03</div>
+          <h3>SLSA L3 provenance</h3>
+          <p><span class="mono">slsa-verifier</span> confirms the binary was produced by the trusted SLSA builder from this source &mdash; at this tag.</p>
+        </div>
+      </div>
+
+      <div class="codeblock" aria-label="Verification commands (preview)">
+<pre><span class="c"># 1 — checksum</span>
+<span class="k">sha256sum</span> --check --ignore-missing checksums.txt
+
+<span class="c"># 2 — Sigstore signature (keyless)</span>
+<span class="k">cosign</span> verify-blob --bundle checksums.txt.cosign.bundle \
+  --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+  checksums.txt
+
+<span class="c"># 3 — SLSA L3 provenance</span>
+<span class="k">slsa-verifier</span> verify-artifact "$BIN" \
+  --provenance-path "$BIN.intoto.jsonl" --source-uri "github.com/OWNER/REPO"</pre>
+      </div>
+      <p class="doclink muted">// Full recipe &mdash; including exact identity regex and per-platform artifacts &mdash; ships in <a href="#" id="release-doc-link" aria-disabled="true">docs/RELEASE.md</a> with the first signed release.</p>
+    </div>
+  </section>
+
+</main>
+
+<!-- ===================== 5 — FOOTER ===================== -->
+<footer class="footer">
+  <div class="wrap">
+    <div>
+      <img src="assets/lockups/penrush-lockup-primary-horizontal.svg" alt="PenRUSH" width="180" height="54">
+      <div class="tag">don't rush to download.</div>
+    </div>
+    <nav aria-label="Footer">
+      <a href="terms.html">Terms of Use</a>
+      <!-- GitHub repo placeholder — public repo is PH-2-gated -->
+      <span class="pending" title="Public repository opens after the PH-2 security audit">GitHub &mdash; soon</span>
+      <a href="LICENSE">License &middot; Apache-2.0</a>
+    </nav>
+    <p class="legal">
+      PenRUSH is published by Uri Zohar (Israeli licensed exempt dealer / <em>Esek Patur</em>). Free and open-source under the Apache License 2.0 &mdash; provided &ldquo;AS IS&rdquo;, without warranty of any kind. This site collects nothing: no account, no email, no cookies, no telemetry, no analytics.
+    </p>
+  </div>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>

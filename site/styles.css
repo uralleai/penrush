@@ -1,0 +1,328 @@
+/* ==========================================================================
+   PenRUSH — download site stylesheet
+   Direction A "Cooldown Dial". Every color/space/type value traces to
+   Assets/penrush/design-tokens.json (VDA, locked in approved-version.json).
+   Flat system: NO shadows, NO gradients. Sharp corners (radius 0) everywhere
+   except the icon tile. NO #FFFFFF — warm-cream #F0EADB is the lightest tone.
+   Self-hosted fonts only (fonts/fonts.css). Zero third-party CSS.
+   ========================================================================== */
+
+@import url("./fonts/fonts.css");
+
+:root {
+  /* color — design-tokens.json */
+  --bg:        #16191D;  /* graphite-ink   — page ground, darkest tone        */
+  --surface:   #272C33;  /* slate          — raised panel on graphite         */
+  --accent:    #EFA436;  /* signal-amber   — single accent; used sparingly    */
+  --fg:        #F0EADB;  /* warm-cream     — primary text; lightest tone      */
+  --muted:     #8E99A4;  /* muted-steel    — secondary text, hairline borders */
+
+  /* type */
+  --font-sans: 'IBM Plex Sans', sans-serif;
+  --font-mono: 'IBM Plex Mono', monospace;
+
+  /* 4px base grid */
+  --s1: 4px;  --s2: 8px;  --s3: 12px; --s4: 16px; --s5: 20px; --s6: 24px;
+  --s8: 32px; --s12: 48px; --s16: 64px; --s18: 72px; --s24: 96px;
+
+  --ls-label: 0.08em;        /* mono labels  */
+  --ls-wordmark: -0.02em;
+
+  --border-hairline: 1px solid var(--muted);
+  --border-emphasis: 2px solid var(--muted);
+
+  --maxw: 1040px;
+}
+
+/* ---- reset ------------------------------------------------------------- */
+*, *::before, *::after { box-sizing: border-box; }
+html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+}
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-weight: 600;
+  font-size: 18px;            /* body */
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+img, svg { display: block; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; text-underline-offset: 3px; }
+a:focus-visible,
+button:focus-visible,
+input:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+/* a thin amber rule any element can carry */
+.hairline { border-top: var(--border-hairline); }
+
+/* skip link for keyboard users */
+.skip {
+  position: absolute; left: -9999px; top: 0; z-index: 100;
+  background: var(--accent); color: var(--bg);
+  font-family: var(--font-mono); font-weight: 700;
+  padding: var(--s3) var(--s5); letter-spacing: var(--ls-label); text-transform: uppercase;
+}
+.skip:focus { left: var(--s4); top: var(--s4); }
+
+/* ---- shared layout ----------------------------------------------------- */
+.wrap { max-width: var(--maxw); margin: 0 auto; padding-inline: var(--s6); }
+section { padding-block: var(--s24); }
+
+/* mono gauge label — the recurring "instrument readout" device */
+.gauge-label {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  font-size: 14px;
+  letter-spacing: var(--ls-label);
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 0 var(--s5);
+  display: flex; align-items: center; gap: var(--s3);
+}
+.gauge-label::before {
+  content: ""; width: 28px; height: 2px; background: var(--accent); flex: none;
+}
+
+h1, h2, h3 { font-family: var(--font-sans); font-weight: 700; margin: 0; }
+h2 { font-size: 32px; line-height: 1.2; letter-spacing: -0.01em; }
+h3 { font-size: 20px; line-height: 1.2; }
+p  { margin: 0 0 var(--s4); max-width: 64ch; }
+.muted { color: var(--muted); }
+.mono  { font-family: var(--font-mono); }
+
+/* ==========================================================================
+   1 — TOP BAR
+   ========================================================================== */
+.topbar {
+  border-bottom: var(--border-hairline);
+  position: sticky; top: 0; z-index: 50;
+  background: rgba(22, 25, 29, 0.92);           /* graphite, no white */
+  backdrop-filter: blur(6px);
+}
+.topbar .wrap { display: flex; align-items: center; justify-content: space-between; padding-block: var(--s4); }
+.topbar img { height: 26px; width: auto; }
+.topbar nav { display: flex; gap: var(--s6); }
+.topbar nav a {
+  font-family: var(--font-mono); font-weight: 500; font-size: 14px;
+  letter-spacing: var(--ls-label); text-transform: uppercase; color: var(--muted);
+}
+.topbar nav a:hover { color: var(--fg); text-decoration: none; }
+@media (max-width: 720px) { .topbar nav { display: none; } }
+
+/* ==========================================================================
+   2 — HERO  (the instrument panel)
+   ========================================================================== */
+.hero { padding-block: var(--s24) var(--s18); }
+.hero .wrap { display: grid; grid-template-columns: 1fr 260px; gap: var(--s18); align-items: center; }
+@media (max-width: 860px) {
+  .hero .wrap { grid-template-columns: 1fr; gap: var(--s12); }
+  .hero-dial { order: -1; margin-inline: auto; }
+}
+
+.hero h1 {
+  font-size: clamp(40px, 6.5vw, 72px);
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  margin-bottom: var(--s5);
+}
+.hero h1 .accent { color: var(--accent); }
+.tagline {
+  font-family: var(--font-mono); font-weight: 500;
+  font-size: 17px; letter-spacing: var(--ls-label); text-transform: lowercase;
+  color: var(--accent); margin: 0 0 var(--s6);
+}
+.hero p.lede { font-size: 20px; color: var(--fg); max-width: 52ch; }
+
+.hero-cta { display: flex; gap: var(--s4); flex-wrap: wrap; margin-top: var(--s8); }
+
+/* the dial SVG + readout. Readout is a mono gauge strip UNDER the mark, so the
+   locked logomark center (the two cream pause-bars) is never covered. */
+.hero-dial { width: 220px; position: relative; }
+.hero-dial svg { width: 100%; height: auto; }
+.hero-dial .readout {
+  margin-top: var(--s5); display: flex; align-items: baseline; justify-content: center; gap: var(--s3);
+  border-top: var(--border-hairline); padding-top: var(--s4);
+}
+.hero-dial .readout .num {
+  font-family: var(--font-mono); font-weight: 700; font-size: 22px; color: var(--accent); line-height: 1;
+}
+.hero-dial .readout .unit {
+  font-family: var(--font-mono); font-weight: 500; font-size: 12px; letter-spacing: var(--ls-label);
+  text-transform: uppercase; color: var(--muted);
+}
+
+/* one-time sweep on load — the dial "arms" itself */
+.dial-ring {
+  stroke-dasharray: 471.2 565.5;     /* matches locked logomark geometry */
+  stroke-dashoffset: -235.6;
+}
+.dial-animate .dial-ring {
+  animation: dial-sweep 1100ms cubic-bezier(0.16, 1, 0.3, 1) 200ms both;
+}
+@keyframes dial-sweep {
+  from { stroke-dasharray: 0 1036.7; }
+  to   { stroke-dasharray: 471.2 565.5; }
+}
+
+/* ---- buttons ----------------------------------------------------------- */
+.btn {
+  font-family: var(--font-mono); font-weight: 700; font-size: 15px;
+  letter-spacing: var(--ls-label); text-transform: uppercase;
+  padding: var(--s4) var(--s6); border: var(--border-emphasis);
+  background: transparent; color: var(--fg); cursor: pointer;
+  display: inline-flex; align-items: center; gap: var(--s3);
+  transition: background-color 140ms ease, color 140ms ease, border-color 140ms ease, opacity 140ms ease;
+}
+.btn:hover { border-color: var(--accent); color: var(--accent); text-decoration: none; }
+.btn-primary { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+.btn-primary:hover { background: var(--fg); border-color: var(--fg); color: var(--bg); }
+.btn[disabled], .btn[aria-disabled="true"] {
+  cursor: not-allowed; opacity: 1;
+  background: transparent; color: var(--muted); border-color: var(--muted);
+}
+
+/* ==========================================================================
+   3 — HOW IT WORKS
+   ========================================================================== */
+.how .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; border: var(--border-hairline); }
+@media (max-width: 760px) { .how .grid { grid-template-columns: 1fr; } }
+.panel { padding: var(--s12); border-right: var(--border-hairline); }
+.panel:last-child { border-right: 0; }
+@media (max-width: 760px) {
+  .panel { border-right: 0; border-bottom: var(--border-hairline); }
+  .panel:last-child { border-bottom: 0; }
+}
+.panel .idx {
+  font-family: var(--font-mono); font-weight: 700; font-size: 14px;
+  letter-spacing: var(--ls-label); color: var(--accent); margin-bottom: var(--s4);
+}
+.panel h3 { margin-bottom: var(--s3); }
+.panel p { font-size: 16px; color: var(--muted); margin: 0; }
+.panel p strong { color: var(--fg); font-weight: 700; }
+
+.how .lead { max-width: 60ch; margin-bottom: var(--s12); font-size: 20px; }
+.how .ecosystems {
+  margin-top: var(--s8); font-family: var(--font-mono); font-weight: 400; font-size: 14px;
+  color: var(--muted); letter-spacing: 0.02em; line-height: 2;
+}
+.how .ecosystems span { color: var(--fg); }
+
+/* ==========================================================================
+   4 — DOWNLOAD BLOCK  (gated)
+   ========================================================================== */
+.download { background: var(--surface); border-block: var(--border-hairline); }
+.download .module { max-width: 640px; margin: 0 auto; }
+
+/* gate status strip */
+.gate-status {
+  display: flex; align-items: center; gap: var(--s3);
+  font-family: var(--font-mono); font-weight: 500; font-size: 14px;
+  letter-spacing: var(--ls-label); text-transform: uppercase; color: var(--accent);
+  border: var(--border-hairline); background: var(--bg);
+  padding: var(--s4) var(--s5); margin-bottom: var(--s8);
+}
+.gate-status .dot { width: 8px; height: 8px; background: var(--accent); flex: none; }
+
+/* consent — verbatim LMO-cleared string lives in the HTML, untouched here */
+.consent {
+  display: grid; grid-template-columns: auto 1fr; gap: var(--s4);
+  border: var(--border-hairline); background: var(--bg);
+  padding: var(--s6); margin-bottom: var(--s6); cursor: pointer;
+  align-items: start;
+}
+.consent input[type="checkbox"] {
+  appearance: none; -webkit-appearance: none;
+  width: 24px; height: 24px; margin: 2px 0 0; flex: none;
+  border: var(--border-emphasis); background: var(--bg); cursor: pointer;
+  display: grid; place-content: center;
+}
+.consent input[type="checkbox"]:checked { background: var(--accent); border-color: var(--accent); }
+.consent input[type="checkbox"]:checked::after {
+  content: ""; width: 11px; height: 6px;
+  border-left: 2px solid var(--bg); border-bottom: 2px solid var(--bg);
+  transform: rotate(-45deg) translate(1px, -1px);
+}
+.consent .consent-text { font-size: 16px; line-height: 1.55; color: var(--fg); }
+.consent .consent-text a { font-weight: 700; }
+
+.download-action { display: flex; flex-direction: column; gap: var(--s5); }
+.download-action .btn-primary { width: 100%; justify-content: center; font-size: 16px; padding-block: var(--s5); }
+
+/* the honest "ships after audit" note — shown while gated */
+.gate-note {
+  font-family: var(--font-mono); font-weight: 400; font-size: 14px; line-height: 1.7;
+  color: var(--muted); border-left: 2px solid var(--accent); padding-left: var(--s5);
+}
+.gate-note strong { color: var(--fg); font-weight: 500; }
+
+/* assistive: tells the checkbox why the button is still inert */
+.consent-hint {
+  font-family: var(--font-mono); font-size: 13px; letter-spacing: 0.02em;
+  color: var(--muted); min-height: 1.4em; margin: 0;
+}
+
+/* ==========================================================================
+   5 — VERIFY YOUR DOWNLOAD
+   ========================================================================== */
+.verify .lead { max-width: 60ch; margin-bottom: var(--s12); font-size: 20px; }
+.verify .checks { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--s5); }
+@media (max-width: 820px) { .verify .checks { grid-template-columns: 1fr; } }
+.check { border: var(--border-hairline); padding: var(--s8); }
+.check .idx {
+  font-family: var(--font-mono); font-weight: 700; font-size: 13px; letter-spacing: var(--ls-label);
+  text-transform: uppercase; color: var(--accent); margin-bottom: var(--s4);
+}
+.check h3 { font-size: 17px; margin-bottom: var(--s3); }
+.check p { font-size: 15px; color: var(--muted); margin: 0; }
+
+.codeblock {
+  margin-top: var(--s8); border: var(--border-hairline); background: var(--bg);
+  padding: var(--s6); overflow-x: auto;
+}
+.codeblock pre {
+  margin: 0; font-family: var(--font-mono); font-weight: 400; font-size: 14px;
+  line-height: 1.7; color: var(--fg); white-space: pre;
+}
+.codeblock .c { color: var(--muted); }     /* comment */
+.codeblock .k { color: var(--accent); }    /* command keyword */
+.verify .doclink { margin-top: var(--s6); font-family: var(--font-mono); font-size: 14px; }
+
+/* ==========================================================================
+   7 — LEGAL PAGE  (terms.html)
+   Moved out of terms.html's inline <style> block so the site can ship a strict
+   Content-Security-Policy with style-src 'self' (no 'unsafe-inline'). A
+   supply-chain-security tool shouldn't relax its own CSP if it doesn't have to.
+   ========================================================================== */
+.legal-page { padding-block: var(--s16); }
+.legal-page .wrap { max-width: 760px; }
+.legal-page h1 { font-size: 40px; line-height: 1.1; letter-spacing: -0.02em; margin-bottom: var(--s4); }
+.legal-page .updated { font-family: var(--font-mono); font-size: 14px; color: var(--muted); letter-spacing: 0.02em; margin-bottom: var(--s12); }
+.legal-page h2 { font-size: 20px; margin: var(--s12) 0 var(--s4); }
+.legal-page h2 .n { font-family: var(--font-mono); color: var(--accent); margin-right: var(--s3); }
+.legal-page p { font-size: 17px; color: var(--fg); line-height: 1.65; max-width: none; }
+.legal-page .back { font-family: var(--font-mono); font-size: 14px; letter-spacing: var(--ls-label); text-transform: uppercase; }
+.legal-page strong { color: var(--fg); font-weight: 700; }
+.legal-page .closing { margin-top: var(--s16); }
+
+/* ==========================================================================
+   6 — FOOTER
+   ========================================================================== */
+.footer { border-top: var(--border-hairline); padding-block: var(--s12); }
+.footer .wrap { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s12); flex-wrap: wrap; }
+.footer img { height: 22px; width: auto; margin-bottom: var(--s4); }
+.footer .tag { font-family: var(--font-mono); font-size: 13px; color: var(--muted); letter-spacing: var(--ls-label); text-transform: lowercase; }
+.footer nav { display: flex; gap: var(--s8); flex-wrap: wrap; }
+.footer nav a, .footer nav span {
+  font-family: var(--font-mono); font-weight: 500; font-size: 14px;
+  letter-spacing: var(--ls-label); text-transform: uppercase; color: var(--muted);
+}
+.footer nav a:hover { color: var(--fg); text-decoration: none; }
+.footer nav .pending { color: var(--muted); opacity: 0.6; cursor: default; }
+.footer .legal { width: 100%; font-family: var(--font-mono); font-size: 13px; color: var(--muted); line-height: 1.7; }

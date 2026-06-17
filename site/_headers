@@ -1,0 +1,33 @@
+# Cloudflare Pages — HTTP response headers
+# https://developers.cloudflare.com/pages/configuration/headers/
+#
+# These enforce the same policy as the <meta http-equiv> CSP in the HTML, but at
+# the edge and for EVERY response (including assets a meta tag can't cover). A
+# response header CSP also takes precedence over the meta tag, so the two are
+# kept byte-identical on purpose. PenRUSH is a supply-chain-security tool: the
+# served site must not be able to load or talk to anything off-origin.
+
+/*
+  Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; manifest-src 'self'
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: no-referrer
+  Permissions-Policy: accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=(), interest-cohort=()
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Resource-Policy: same-origin
+  Cross-Origin-Embedder-Policy: require-corp
+  Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
+
+# Immutable, content-addressed-enough static assets — cache hard.
+/fonts/*
+  Cache-Control: public, max-age=31536000, immutable
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+/styles.css
+  Cache-Control: public, max-age=3600
+/app.js
+  Cache-Control: public, max-age=3600
+
+# HTML should revalidate so a gate flip (RELEASE_AVAILABLE) goes live promptly.
+/*.html
+  Cache-Control: public, max-age=0, must-revalidate
