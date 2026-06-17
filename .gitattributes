@@ -1,0 +1,15 @@
+# Enforce LF for shell scripts so build.sh runs on the POSIX CI runners
+# (ubuntu/macos) regardless of a contributor's core.autocrlf setting. CRLF in a
+# shell script breaks the shebang/interpreter on Linux — and build.sh IS the
+# reproducible-build proof the release pipeline depends on.
+*.sh    text eol=lf
+
+# YAML workflows and Go sources: normalize to LF in the repo too.
+*.yml   text eol=lf
+*.yaml  text eol=lf
+*.go    text eol=lf
+go.mod  text eol=lf
+Makefile text eol=lf
+
+# Let Git auto-detect the rest.
+*       text=auto
