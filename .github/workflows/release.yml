@@ -129,6 +129,14 @@ jobs:
     uses: slsa-framework/slsa-github-generator/.github/workflows/builder_go_slsa3.yml@v2.1.0
     with:
       go-version-file: go.mod
+      # private-repository: true — the SLSA builder otherwise HALTS on a private
+      # repo to avoid writing the repo name into the PUBLIC Sigstore/Rekor
+      # transparency log. Uri-authorized 2026-06-19: we intentionally accept that
+      # `uralleai/penrush` (the NAME only — code stays private) appears in the
+      # public transparency log so the full signing chain (SLSA provenance +
+      # cosign keyless) can be validated end-to-end BEFORE the deliberate
+      # public flip. Remove/keep as-is once the repo is public (then moot).
+      private-repository: true
       # Per-target config: the SLSA Go builder selects the compile target from the
       # config file's goos:/goarch: keys (NOT from evaluated-envs) and fills the
       # binary-name {{ .Os }}/{{ .Arch }} templates from those same fields. The
