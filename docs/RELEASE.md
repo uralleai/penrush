@@ -57,13 +57,23 @@ git tag -a v0.1.0 -m "PenRUSH v0.1.0"
 
 ### The `release` Environment (OIDC signing gate, §H.3)
 
-The two jobs that hold `id-token: write` — `build` (SLSA provenance signing) and
-`checksums-sign` (cosign keyless) — are both bound to a **protected GitHub
-Environment named `release`**. Holding `v*`-tag push rights alone is **not**
+A dedicated **`release-gate`** job is bound to a **protected GitHub Environment
+named `release`**, and the two jobs that hold `id-token: write` — `build` (SLSA
+provenance signing) and `checksums-sign` (cosign keyless) — both `needs:
+release-gate`. Because neither OIDC job can start until the `release` deployment
+is approved on `release-gate`, holding `v*`-tag push rights alone is **not**
 sufficient to mint a Fulcio certificate or SLSA provenance: the Environment's
-protection rules interpose a human/branch-policy gate, backstopping the STRIDE
-single-maintainer-compromise case (arch §H.3, line 401: "id-token: write confined
-to the environment-protected release job").
+protection rules interpose a human/branch-policy gate at `release-gate`,
+backstopping the STRIDE single-maintainer-compromise case (arch §H.3, line 401:
+"id-token: write confined to the environment-protected release job").
+
+> **Why a separate gate job, not `environment:` on `build`.** GitHub restricts a
+> job that *calls a reusable workflow* (`uses: …builder_go_slsa3.yml@v2.1.0`) to
+> the keys `name/uses/with/secrets/needs/if/permissions/strategy/concurrency` —
+> `environment:` is **not** permitted there and makes the workflow file
+> schema-invalid (startup_failure). The gate therefore lives on the normal
+> `release-gate` job, and the dependency edge carries the protection to both
+> OIDC-minting jobs. The guarantee is identical; only the placement is valid.
 
 **Required protection rules** (configure once, in repo Settings → Environments →
 `release`, before the first real tagged release):
@@ -71,14 +81,14 @@ to the environment-protected release job").
 - **Deployment tag policy** — restrict to `v*` tags only (no branch deployments).
 - **Required reviewers** — at least one. Per the PSS hard rule that `git push`
   (and therefore the tag that triggers this pipeline) is **GODclaude-only**,
-  GODclaude is the encoded reviewer; the deployment cannot proceed to the
-  signing jobs until that reviewer approves.
+  GODclaude is the encoded reviewer; the deployment cannot proceed past
+  `release-gate` to the signing jobs until that reviewer approves.
 - **No secrets stored** in the Environment — keyless signing uses only the
   ephemeral OIDC token; there is deliberately no long-lived release key (§C.5).
 
-Until these rules are set, the `environment: release` reference in
-`release.yml` still creates the gate but with no reviewers it auto-approves —
-so this configuration step is a **release pre-flight item**, not optional.
+Until these rules are set, the `environment: release` reference on `release-gate`
+still creates the gate but with no reviewers it auto-approves — so this
+configuration step is a **release pre-flight item**, not optional.
 
 ### Post-release (manual)
 

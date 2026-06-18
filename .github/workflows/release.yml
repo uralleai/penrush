@@ -43,6 +43,32 @@ permissions:
   contents: read
 
 jobs:
+  # ── 0. Release gate (OIDC-minting backstop, arch §H.3) ─────────────────────
+  # The single environment-protected gate that BOTH OIDC-minting jobs depend on:
+  #   * `build`         mints SLSA L3 provenance (id-token: write → Fulcio).
+  #   * `checksums-sign` mints the cosign keyless cert  (id-token: write → Fulcio).
+  # `environment:` is NOT a permitted key on a job that calls a reusable workflow
+  # (the GitHub reusable-workflow caller is restricted to
+  #  name/uses/with/secrets/needs/if/permissions/strategy/concurrency), so the
+  # gate cannot live on `build`. We place it on this dedicated normal-`steps`
+  # job instead and have `build` + `checksums-sign` require it. The `release`
+  # Environment carries a deployment tag policy (v* only) and a required reviewer,
+  # so merely holding v*-tag push rights is NOT sufficient to mint a Fulcio cert /
+  # SLSA provenance: deployment to `release` must be approved first, which gates
+  # every downstream OIDC token. This backstops the STRIDE single-maintainer-
+  # compromise case (P-6) — "id-token: write confined to the environment-protected
+  # release job" (arch §H.3, line 401). Protection rules: docs/RELEASE.md Part 1.
+  release-gate:
+    name: Release gate (environment-protected)
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: read
+    steps:
+      - name: Approve release minting
+        shell: bash
+        run: echo "release Environment deployment approved — OIDC minting unlocked for tag ${GITHUB_REF_NAME}"
+
   # ── 1. Resolve the deterministic commit stamp ──────────────────────────────
   args:
     name: Resolve build args
@@ -85,14 +111,12 @@ jobs:
   # the top of this file. It is the one and only non-SHA pin in the pipeline.
   build:
     name: SLSA build ${{ matrix.os }}/${{ matrix.arch }}
-    needs: [args, reproducibility]
-    # Confine the OIDC signing capability behind an environment-protected release
-    # job (arch §H.3). The `release` Environment carries a deployment tag policy
-    # (v* only) and a required reviewer, so merely holding v*-tag push rights is
-    # NOT sufficient to mint a Fulcio cert / SLSA provenance — the STRIDE
-    # single-maintainer-compromise case is backstopped by the human/branch-policy
-    # gate. Protection rules are documented in docs/RELEASE.md Part 1.
-    environment: release
+    # `release-gate` interposes the environment-protected gate (arch §H.3): this
+    # reusable-workflow call cannot start — and therefore cannot mint SLSA
+    # provenance via id-token: write — until deployment to the `release`
+    # Environment is approved. `environment:` itself is NOT a valid key on a
+    # reusable-workflow caller job, so the gate lives on `release-gate`, not here.
+    needs: [args, reproducibility, release-gate]
     permissions:
       id-token: write # OIDC token for keyless provenance signing (Fulcio).
       contents: write # upload the binary + provenance to the GitHub Release.
@@ -124,12 +148,14 @@ jobs:
   # ── 4. Checksums + Sigstore keyless signing, attached to the release ────────
   checksums-sign:
     name: Checksums + cosign keyless sign
-    needs: [build]
+    # Transitively behind the same environment-protected gate as `build`
+    # (arch §H.3): `build` needs `release-gate`, so by the time this job runs the
+    # `release` Environment deployment is already approved and the cosign keyless
+    # OIDC identity (id-token: write below) cannot be minted without the
+    # Environment's tag policy + required reviewer having passed. The single
+    # approval point is `release-gate`; see docs/RELEASE.md Part 1.
+    needs: [build, release-gate]
     runs-on: ubuntu-latest
-    # Same environment-protected gate as `build` (arch §H.3): the cosign keyless
-    # OIDC identity must not be mintable without the `release` Environment's tag
-    # policy + required reviewer. See docs/RELEASE.md Part 1.
-    environment: release
     permissions:
       id-token: write # OIDC identity for cosign keyless (Fulcio/Rekor).
       contents: write # attach the checksums + cosign bundle to the release.
