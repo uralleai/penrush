@@ -150,11 +150,13 @@ func TestE2EMatrix(t *testing.T) {
 				home := initHome(t)
 
 				// The override column requires an active override under the key
-				// the ENGINE looks up: ArtifactKey(eco,name) = "eco:name". (Note:
-				// the override CLI validator uses "crates:" for cargo while the
-				// engine looks up "cargo:" — a real key-namespace seam. We inject
-				// at the engine's key directly so this cell tests the engine's
-				// override path, independent of that CLI defect.)
+				// the ENGINE looks up: ArtifactKey(eco,name) = "eco:name". The
+				// CLI validator (override.knownEcosystems) now accepts the SAME
+				// token for every ecosystem — including "cargo" (F-1 closed;
+				// see TestF1CargoOverrideKeyConsultedThroughDocumentedCommand),
+				// so the injected key equals the documented-command key. We
+				// inject at the engine's key directly to keep this cell focused
+				// on the engine's override path, hermetically.
 				if col == colOverride {
 					injectOverride(t, home, eco+":"+art.name)
 				}

@@ -8,9 +8,15 @@
 //   - scope "exact" only — wildcard keys are architecturally rejected (SC.4)
 //   - approver field present now as the v1 team-mode seam (FR-103)
 //
-// Key format identical to the internal hook: npm:<name>, pypi:<name>,
-// crates:<name>, gem:<name>, github:<owner>/<repo>, docker:<image>,
-// go:<module>, mcp:<server>.
+// Key format: npm:<name>, pypi:<name>, cargo:<name>, gem:<name>,
+// github:<owner>/<repo>, docker:<image>, go:<module>, mcp:<server>.
+//
+// The ecosystem token is the SAME canonical string the registry resolver
+// reports (registry/cargo.go Ecosystem()=="cargo"), the gate builds into its
+// override/cache key (gate.ArtifactKey "eco:name"), check.go registers, and the
+// BLOCK verdict prints in the "penrush override add <key>" hint. Unifying on
+// "cargo" closes F-1: the key the gate prints == the key it looks up == the key
+// this store accepts, so a documented cargo override is addable and consulted.
 package override
 
 import (
@@ -33,9 +39,11 @@ const DefaultTTL = 30 * 24 * time.Hour
 // MaxTTL is the hard ceiling (SC.4: 30-day max expiry, no permanent overrides).
 const MaxTTL = 30 * 24 * time.Hour
 
-// knownEcosystems for key validation.
+// knownEcosystems for key validation. The token MUST match the resolver's
+// Ecosystem() / gate.ArtifactKey / check.go registration for every ecosystem
+// (F-1: cargo, not crates — the resolver, gate, and printed hint all say cargo).
 var knownEcosystems = map[string]bool{
-	"npm": true, "pypi": true, "crates": true, "gem": true,
+	"npm": true, "pypi": true, "cargo": true, "gem": true,
 	"github": true, "docker": true, "go": true, "mcp": true,
 }
 
@@ -89,7 +97,7 @@ func ValidateKey(key string) error {
 		return fmt.Errorf("override key must be <ecosystem>:<artifact>, got %q", key)
 	}
 	if !knownEcosystems[eco] {
-		return fmt.Errorf("unknown ecosystem %q in override key (known: npm, pypi, crates, gem, github, docker, go, mcp)", eco)
+		return fmt.Errorf("unknown ecosystem %q in override key (known: npm, pypi, cargo, gem, github, docker, go, mcp)", eco)
 	}
 	if strings.ContainsAny(name, "*?") {
 		return fmt.Errorf("wildcard overrides are not supported (SC.4): %q", key)
