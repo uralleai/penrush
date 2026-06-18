@@ -24,6 +24,9 @@ penrush-state/
 go.work
 go.work.sum
 
+# --- Cloudflare Wrangler deploy cache (site/ deploy tooling; never source) ---
+.wrangler/
+
 # --- OS / editor cruft ---
 .DS_Store
 Thumbs.db
