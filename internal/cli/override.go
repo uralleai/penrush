@@ -45,6 +45,7 @@ func runOverrideAdd(e *Env, args []string) int {
 	fs.SetOutput(e.Stderr)
 	reason := fs.String("reason", "", "mandatory justification for the override (FR-004)")
 	ttlDays := fs.Int("ttl-days", 0, "override lifetime in days (default 30, max 30)")
+	version := fs.String("version", "", "pin the override to the reviewed version (PR-P2-02): a different version re-enters the age gate instead of being silently allowed")
 	if err := fs.Parse(flagArgs); err != nil {
 		return ExitUsageErr
 	}
@@ -74,7 +75,7 @@ func runOverrideAdd(e *Env, args []string) int {
 	}
 
 	ttl := time.Duration(*ttlDays) * 24 * time.Hour
-	o, err := store.Add(key, *reason, ttl, e.now())
+	o, err := store.AddWithVersion(key, *reason, *version, ttl, e.now())
 	if err != nil {
 		fmt.Fprintf(e.Stderr, "penrush override add: %v\n", err)
 		return ExitUsageErr
@@ -102,6 +103,11 @@ func runOverrideAdd(e *Env, args []string) int {
 	fmt.Fprintf(e.Stdout, "  reason:  %s\n", o.Reason)
 	fmt.Fprintf(e.Stdout, "  expires: %s (UTC) — %d-day window\n", o.ExpiresAt, daysFromTTL(ttl))
 	fmt.Fprintf(e.Stdout, "  scope:   %s\n", o.Scope)
+	if o.Version != "" {
+		fmt.Fprintf(e.Stdout, "  version: %s (a different version re-enters the age gate)\n", o.Version)
+	} else {
+		fmt.Fprintf(e.Stdout, "  version: any (version-blind — pin with --version to scope to the reviewed release)\n")
+	}
 	return ExitPass
 }
 
@@ -118,6 +124,7 @@ func daysFromTTL(ttl time.Duration) int {
 var valueFlags = map[string]bool{
 	"-reason": true, "--reason": true,
 	"-ttl-days": true, "--ttl-days": true,
+	"-version": true, "--version": true,
 }
 
 // splitKeyAndFlags pulls exactly one positional key out of args (in any

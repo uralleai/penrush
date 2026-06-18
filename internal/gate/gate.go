@@ -77,8 +77,14 @@ func (e *Engine) CheckGate1(ctx context.Context, eco, name, version string) Verd
 	cooldown := time.Duration(e.Config.Cooldown(eco)) * 24 * time.Hour
 	key := ArtifactKey(eco, name)
 
-	// 1. Override (FR-004): an unexpired exact-key override passes the gate.
-	if e.Overrides != nil && e.Overrides.Active(key, now) {
+	// 1. Override (FR-004): an unexpired exact-key override passes the gate —
+	//    but only when it APPLIES to the requested version (PR-P2-02). A
+	//    version-pinned override approves only the reviewed version; a different
+	//    version falls through to the age gate below rather than being silently
+	//    waved through (the "reviewed v1.0.0 → freshly-published-malicious v99"
+	//    exposure). A version-blind (legacy) override still applies to any
+	//    version, preserving v0 UX.
+	if e.Overrides != nil && e.Overrides.AppliesTo(key, version, now) {
 		o, _ := e.Overrides.Get(key)
 		return Verdict{
 			Gate:     "G1",

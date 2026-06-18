@@ -35,6 +35,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/penrush/penrush/internal/audit"
 	"github.com/penrush/penrush/internal/cache"
@@ -42,6 +43,7 @@ import (
 	"github.com/penrush/penrush/internal/gate"
 	"github.com/penrush/penrush/internal/override"
 	"github.com/penrush/penrush/internal/penrushdir"
+	"github.com/penrush/penrush/internal/redact"
 )
 
 // ExitHookBlock is the GUARANTEED block exit code for the PreToolUse hook.
@@ -140,27 +142,49 @@ func runHookClaudeCode(e *Env) (code int) {
 		return emitDecision(e, decisionAllow, "")
 	}
 
-	// 3. Parse the command (§A.5).
-	pr := ParseInstallCommand(cmd)
-	switch pr.Action {
-	case ActionIgnore:
-		// Not an install-like command: allow, no registry call (the <30ms p95
-		// no-match short-circuit, §J).
+	// 3. Parse the command into per-segment results (§A.5). EVERY install-bearing
+	//    shell segment is classified independently and gated; the overall
+	//    decision is the MOST-RESTRICTIVE across all segments — a benign or
+	//    lockfile-frozen segment cannot vouch for a malicious install chained
+	//    after it (PR-TB1-001, PR-TB1-002).
+	results := ParseInstallCommands(cmd)
+
+	// A purely-structural pass: if no segment is install-like, allow with no
+	// registry call (the <30ms p95 no-match short-circuit, §J).
+	if len(results) == 1 && results[0].Action == ActionIgnore {
 		return emitDecision(e, decisionAllow, "")
-	case ActionAllow:
-		return emitDecision(e, decisionAllow, pr.Reason)
-	case ActionBlock:
-		// Structural block (missing pin / system pkg / go @latest / unparseable):
-		// deny via the structured path, with the override hint when we have a key.
-		return emitDeny(e, structuralDenyReason(pr))
-	case ActionGate:
-		// fallthrough below
-	default:
-		return failClosed(e, "internal: unknown parse action — fail-closed.")
 	}
 
-	// 4. ActionGate: run the SAME gate engine the `check` path runs. Identical
-	//    inputs → identical Verdict → parity by construction.
+	// 3a. Any structural block in ANY segment short-circuits to deny ahead of
+	//     age gating (the reference hook's evaluation order, now applied
+	//     per-segment). Deny on the FIRST blocking segment so the reason names
+	//     the offending command.
+	for _, pr := range results {
+		if pr.Action == ActionBlock {
+			return emitDeny(e, structuralDenyReason(pr))
+		}
+	}
+
+	// 3b. Collect the segments that need the engine. If there are none (every
+	//     segment was ActionAllow lockfile-frozen), allow.
+	var gates []ParseResult
+	allowReason := ""
+	for _, pr := range results {
+		switch pr.Action {
+		case ActionGate:
+			gates = append(gates, pr)
+		case ActionAllow:
+			if allowReason == "" {
+				allowReason = pr.Reason
+			}
+		}
+	}
+	if len(gates) == 0 {
+		return emitDecision(e, decisionAllow, allowReason)
+	}
+
+	// 4. Run the SAME gate engine the `check` path runs, once PER gated segment.
+	//    Identical inputs → identical Verdict → parity by construction.
 	home, herr := e.resolveHomeEnsured()
 	if herr != nil {
 		return failClosed(e, fmt.Sprintf("cannot open PenRUSH home (%v) — fail-closed. Run `penrush init`.", herr))
@@ -175,6 +199,9 @@ func runHookClaudeCode(e *Env) (code int) {
 		cfg = def
 	}
 	failMode = cfg.OnInternalError // now the recover() honors the configured mode
+
+	// Audit any config attempt to loosen the cooldown below the floor (PR-P2-01).
+	auditCooldownClamps(home, cfg)
 
 	overrides, oerr := override.Load(penrushdir.OverridesPath(home))
 	if oerr != nil {
@@ -194,25 +221,38 @@ func runHookClaudeCode(e *Env) (code int) {
 		Now:       e.Now,
 	}
 
-	v := eng.CheckGate1(context.Background(), pr.Eco, pr.Name, pr.Version)
+	log := audit.Open(penrushdir.AuditPath(home))
+	var firstBlock *gate.Verdict
+	allowReasons := make([]string, 0, len(gates))
+	for i := range gates {
+		pr := gates[i]
+		v := eng.CheckGate1(context.Background(), pr.Eco, pr.Name, pr.Version)
 
-	// 5. Audit the decision (same entry shape as `check`). An audit-write
-	//    failure is itself fail-closed: if we cannot record a decision we do not
-	//    silently allow.
-	entry := verdictToAudit(pr.Eco, pr.Name, pr.Version, v)
-	entry.Command = cmd // the real shell command (redacted by the audit writer)
-	entry.Actor = "claude-code-hook"
-	if _, aerr := audit.Open(penrushdir.AuditPath(home)).Append(entry); aerr != nil {
-		return failClosed(e, fmt.Sprintf("could not write audit entry (%v) — fail-closed.", aerr))
+		// 5. Audit EACH gated segment's decision (same entry shape as `check`).
+		//    An audit-write failure is itself fail-closed.
+		entry := verdictToAudit(pr.Eco, pr.Name, pr.Version, v)
+		entry.Command = cmd // the real shell command (redacted by the audit writer)
+		entry.Actor = "claude-code-hook"
+		if _, aerr := log.Append(entry); aerr != nil {
+			return failClosed(e, fmt.Sprintf("could not write audit entry (%v) — fail-closed.", aerr))
+		}
+
+		switch v.Decision {
+		case gate.Pass, gate.OverrideUsed:
+			allowReasons = append(allowReasons, v.Reason)
+		default:
+			if firstBlock == nil {
+				vc := v
+				firstBlock = &vc
+			}
+		}
 	}
 
-	// 6. Map the verdict onto a permissionDecision and emit (exit 0 + JSON).
-	switch v.Decision {
-	case gate.Pass, gate.OverrideUsed:
-		return emitDecision(e, decisionAllow, v.Reason)
-	default:
-		return emitDeny(e, v.Reason)
+	// 6. Most-restrictive: ANY blocking segment denies the whole command.
+	if firstBlock != nil {
+		return emitDeny(e, firstBlock.Reason)
 	}
+	return emitDecision(e, decisionAllow, strings.Join(allowReasons, "; "))
 }
 
 // structuralDenyReason adds the override path to a structural block reason when
@@ -253,11 +293,18 @@ func emitDecision(e *Env, decision, reason string) int {
 // emitDeny writes a deny decision. If the structured JSON cannot be written for
 // any reason, it falls back to exit 2 (the guaranteed block) — a denial is
 // never allowed to degrade into a non-blocking exit.
+//
+// The reason is credential-redacted before it leaves the process (PRIV-01): a
+// deny reason embeds the parsed artifact name/key, which on a token-bearing
+// install command (`pip install git+https://user:TOKEN@host/r`) would otherwise
+// echo the secret straight back into the Claude Code agent transcript via
+// permissionDecisionReason — a data-disclosure even when no audit row is
+// written (the structural-block path writes none).
 func emitDeny(e *Env, reason string) int {
 	out := hookOutput{HookSpecificOutput: hookSpecificOutput{
 		HookEventName:            "PreToolUse",
 		PermissionDecision:       decisionDeny,
-		PermissionDecisionReason: reason,
+		PermissionDecisionReason: redact.String(reason),
 	}}
 	b, err := json.Marshal(out)
 	if err != nil {

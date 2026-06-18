@@ -30,6 +30,7 @@ package cli
 import (
 	"regexp"
 	"strings"
+	"unicode"
 )
 
 // ParseAction is the parser's structural classification of a command.
@@ -86,16 +87,28 @@ var (
 	}
 	poetryNoLockRe = regexp.MustCompile(`(?i)\bpoetry\s+install\b\s+--no-lock\b`)
 
-	npmAddRe   = regexp.MustCompile(`(?i)\bnpm\s+(?:i|install|add)\b`)
-	pipInstall = regexp.MustCompile(`(?i)\bpip3?\s+install\b`)
-	uvAddRe    = regexp.MustCompile(`(?i)\buv\s+(?:add|pip\s+install)\b`)
-	cargoAddRe = regexp.MustCompile(`(?i)\bcargo\s+(?:install|add)\b`)
-	gemInstall = regexp.MustCompile(`(?i)\bgem\s+install\b`)
-	goGetRe    = regexp.MustCompile(`(?i)\bgo\s+(?:install|get)\s+(\S+@\S+)`)
+	npmAddRe = regexp.MustCompile(`(?i)\bnpm\s+(?:i|install|add)\b`)
+	// pnpmYarnAddRe matches `pnpm add` / `yarn add` (npm-ecosystem installs that
+	// are NOT lockfile-frozen). A frozen `pnpm/yarn install --frozen-lockfile`
+	// is handled by safeFrozenRes; a bare add must be gated/pinned just like
+	// `npm install <pkg>` (PR-TB1-001 listed `pnpm add evil` as a live bypass).
+	pnpmYarnAddRe = regexp.MustCompile(`(?i)\b(?:pnpm|yarn)\s+add\b`)
+	pipInstall    = regexp.MustCompile(`(?i)\bpip3?\s+install\b`)
+	uvAddRe       = regexp.MustCompile(`(?i)\buv\s+(?:add|pip\s+install)\b`)
+	cargoAddRe    = regexp.MustCompile(`(?i)\bcargo\s+(?:install|add)\b`)
+	gemInstall    = regexp.MustCompile(`(?i)\bgem\s+install\b`)
+	goGetRe       = regexp.MustCompile(`(?i)\bgo\s+(?:install|get)\s+(\S+@\S+)`)
+	// goVerbRe matches `go get`/`go install` at a verb position regardless of
+	// whether an @version follows — used to detect the version-less unpinned
+	// fetch the /lock file rule must block (PR-TB1-004a).
+	goVerbRe   = regexp.MustCompile(`(?i)\bgo\s+(?:install|get)\b`)
 	dockerPull = regexp.MustCompile(`(?i)\bdocker\s+(?:pull|run|create)\b`)
 	gitCloneRe = regexp.MustCompile(`(?i)\bgit\s+clone\s+(\S+)`)
-	ghCloneRe  = regexp.MustCompile(`(?i)\bgh\s+repo\s+clone\s+(\S+)`)
-	claudeMCP  = regexp.MustCompile(`(?i)\bclaude\s+mcp\s+(?:add|install)\b`)
+	// ghCloneVerbRe anchors `gh repo clone` so we can scan its positional args
+	// (skipping any leading flags) instead of grabbing the first token — a
+	// leading flag was a gate bypass (PR-TB1-004b).
+	ghCloneVerbRe = regexp.MustCompile(`(?i)\bgh\s+repo\s+clone\b`)
+	claudeMCP     = regexp.MustCompile(`(?i)\bclaude\s+mcp\s+(?:add|install)\b`)
 
 	wingetRe = regexp.MustCompile(`(?i)\bwinget\s+install\b`)
 	chocoRe  = regexp.MustCompile(`(?i)\bchoco\s+install\b`)
@@ -126,21 +139,205 @@ var (
 	whitespaceRe  = regexp.MustCompile(`\s+`)
 )
 
-// ParseInstallCommand classifies a raw shell command string.
-//
-// It returns one ParseResult: ActionIgnore for non-install commands,
-// ActionAllow/ActionBlock for structurally-decided ones, or ActionGate with a
-// populated (Eco, Name, Version) to hand to gate.Engine.CheckGate1.
-//
-// Multi-package install commands: this returns the FIRST artifact that needs
-// gating (the hook adapter calls the engine on it). A structural block (missing
-// pin / system pkg / @latest) short-circuits ahead of any age gating, matching
-// the reference hook's evaluation order.
-func ParseInstallCommand(cmd string) ParseResult {
-	inner := stripShellWrapper(cmd)
+// segmentSeparators splits a normalized command string into independent shell
+// segments. A safe-frozen verb (or any classification) in ONE segment must not
+// vouch for an install verb in ANOTHER (PR-TB1-001). The separators are the
+// shell command-list operators: `;`, `&&`, `||`, `|`, and a newline (already
+// normalized to '\n' by normalizeCommand). Splitting BEFORE classification is
+// the structural fix for the whole-string short-circuit and first-match-only
+// bypasses (PR-TB1-001, PR-TB1-002).
+var segmentSeparators = regexp.MustCompile(`&&|\|\||[;|\n]`)
 
+// zeroWidth runes carry no width and are stripped before matching so they
+// cannot be smuggled inside a verb word (PR-TB1-003): U+200B ZWSP, U+200C
+// ZWNJ, U+200D ZWJ, U+FEFF BOM/ZWNBSP. Written as \u escapes to keep the
+// source ASCII-clean.
+var zeroWidth = map[rune]bool{
+	0x200b: true, 0x200c: true, 0x200d: true, 0xfeff: true,
+}
+
+// lineSep runes are Unicode line/paragraph separators that must become a
+// command separator so a chained install after them is segmented (PR-TB1-003):
+// U+2028 LINE SEPARATOR, U+2029 PARAGRAPH SEPARATOR.
+var lineSep = map[rune]bool{0x2028: true, 0x2029: true}
+
+// normalizeCommand folds the Unicode-evasion surface (PR-TB1-003) into a plain
+// ASCII-separator form the regex grammar can match, WITHOUT a third-party NFKC
+// dependency (zero-deps posture, A.2):
+//   - Unicode line separators U+2028/U+2029 become a newline (so segment
+//     splitting sees the chained command);
+//   - every other Unicode whitespace/separator (NBSP U+00A0, vertical tab,
+//     the U+2000-200A block, etc.) becomes an ASCII space, so \s in the verb
+//     regexes matches a separator the attacker used to break up verb words;
+//   - zero-width characters are handled in TWO ways depending on
+//     zeroWidthAsSpace, because their position is ambiguous: a zero-width
+//     between verb words (`npm<ZWNJ>install`) must become a SEPARATOR to
+//     recover the verb, while a zero-width INSIDE a word (`n<ZWSP>pm`) must be
+//     REMOVED to recover the verb. The caller (ParseInstallCommands) classifies
+//     under BOTH variants and takes the most-restrictive result, so neither
+//     evasion direction slips past — a defense that never under-blocks.
+//
+// Lossy on SEPARATORS only -- package names and flags are otherwise preserved.
+// Case/width of name characters is not folded (a registry-resolution concern,
+// not a verb-evasion one).
+func normalizeCommand(cmd string, zeroWidthAsSpace bool) string {
+	var b strings.Builder
+	b.Grow(len(cmd))
+	for _, r := range cmd {
+		switch {
+		case zeroWidth[r]:
+			if zeroWidthAsSpace {
+				b.WriteByte(' ')
+			} // else: drop
+		case lineSep[r]:
+			b.WriteByte('\n')
+		case r == '\n' || r == '\r':
+			b.WriteRune(r) // keep ASCII line breaks (cmdPos/segment handle them)
+		case r == ' ':
+			b.WriteByte(' ')
+		case unicode.IsSpace(r):
+			// All remaining Unicode whitespace (incl. NBSP, vtab, the U+2000
+			// block) collapses to an ASCII space so the verb regexes match.
+			b.WriteByte(' ')
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+// hasZeroWidth reports whether cmd contains any zero-width character, so the
+// dual-variant classification is only paid for when it matters.
+func hasZeroWidth(cmd string) bool {
+	for _, r := range cmd {
+		if zeroWidth[r] {
+			return true
+		}
+	}
+	return false
+}
+
+// splitSegments returns the independent shell segments of a normalized command.
+// Empty/blank segments are dropped.
+func splitSegments(norm string) []string {
+	parts := segmentSeparators.Split(norm, -1)
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if strings.TrimSpace(p) != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// ParseInstallCommands classifies EVERY install-bearing shell segment of a raw
+// command string and returns one ParseResult per segment that the gate has an
+// opinion on (PR-TB1-001, PR-TB1-002). Segments the gate ignores
+// (ActionIgnore) are dropped from the slice; if NO segment is install-like, a
+// single ActionIgnore is returned so callers can treat the whole command as
+// "allow, no opinion".
+//
+// Each segment is classified INDEPENDENTLY: a lockfile-frozen (ActionAllow)
+// segment cannot vouch for an install verb in another segment, and a benign
+// pinned install in one segment cannot launder a malicious install in another.
+// The hook/check caller takes the MOST-RESTRICTIVE decision across the slice
+// (block > gate-then-block > allow).
+func ParseInstallCommands(cmd string) []ParseResult {
+	// Two normalization variants for zero-width handling (see normalizeCommand):
+	// "drop" recovers a verb split INSIDE a word, "as-space" recovers a verb
+	// split BETWEEN words. We classify under both and keep the more-restrictive
+	// per aligned segment, so neither evasion direction slips. When the command
+	// has no zero-width character, the single variant is used (no extra work).
+	primary := segmentsOf(normalizeCommand(cmd, false))
+	if !hasZeroWidth(cmd) {
+		return collect(classifyAll(primary))
+	}
+	alt := segmentsOf(normalizeCommand(cmd, true))
+	results := classifyAll(primary)
+	altResults := classifyAll(alt)
+	// Merge: a command is malicious if EITHER variant finds a non-ignored verb.
+	// We cannot align segments index-for-index across variants (zero-width
+	// changes the split), so we union both result sets and let the caller take
+	// the most-restrictive overall. For the per-segment slice we return whichever
+	// variant produced the more-restrictive overall decision, preserving each
+	// surfaced install.
+	if rank(mostRestrictive(altResults).Action) > rank(mostRestrictive(results).Action) {
+		results = altResults
+	}
+	return collect(results)
+}
+
+// segmentsOf strips the shell wrapper and splits into segments.
+func segmentsOf(norm string) []string {
+	return splitSegments(stripShellWrapper(norm))
+}
+
+// classifyAll classifies every segment, keeping ignored ones (the caller
+// filters); used so both variants produce comparable slices.
+func classifyAll(segments []string) []ParseResult {
+	out := make([]ParseResult, 0, len(segments))
+	for _, seg := range segments {
+		out = append(out, classifySegment(seg))
+	}
+	return out
+}
+
+// collect drops ActionIgnore results; returns a single ignore if none remain.
+func collect(results []ParseResult) []ParseResult {
+	var out []ParseResult
+	for _, pr := range results {
+		if pr.Action != ActionIgnore {
+			out = append(out, pr)
+		}
+	}
+	if len(out) == 0 {
+		return []ParseResult{{Action: ActionIgnore}}
+	}
+	return out
+}
+
+// rank scores an action by restrictiveness (shared with mostRestrictive).
+func rank(a ParseAction) int {
+	switch a {
+	case ActionBlock:
+		return 3
+	case ActionGate:
+		return 2
+	case ActionAllow:
+		return 1
+	default: // ActionIgnore
+		return 0
+	}
+}
+
+// ParseInstallCommand is the single-result compatibility shim. It returns the
+// MOST-RESTRICTIVE segment result so existing single-result callers cannot be
+// laundered by a chained second install (PR-TB1-001/002). Precedence:
+// ActionBlock > ActionGate > ActionAllow > ActionIgnore. Among multiple gates
+// it returns the first (the engine is invoked on each by the hook path that
+// uses ParseInstallCommands).
+func ParseInstallCommand(cmd string) ParseResult {
+	results := ParseInstallCommands(cmd)
+	return mostRestrictive(results)
+}
+
+// mostRestrictive folds a per-segment slice into one result by severity.
+func mostRestrictive(results []ParseResult) ParseResult {
+	best := ParseResult{Action: ActionIgnore}
+	for _, r := range results {
+		if rank(r.Action) > rank(best.Action) {
+			best = r
+		}
+	}
+	return best
+}
+
+// classifySegment classifies ONE shell segment (no separators inside). It is
+// the former body of ParseInstallCommand, operating on a single, already
+// Unicode-normalized segment.
+func classifySegment(inner string) ParseResult {
 	// Safe-frozen modes pass immediately (but `poetry install --no-lock` does
-	// NOT — it opts out of the lockfile).
+	// NOT — it opts out of the lockfile). Scoped to THIS segment only.
 	if isSafeFrozen(inner) {
 		return ParseResult{Action: ActionAllow, Reason: "lockfile-frozen mode"}
 	}
@@ -157,6 +354,20 @@ func ParseInstallCommand(cmd string) ParseResult {
 						"Suggested: npm install --save-exact " + strings.Join(pkgs, " "),
 				}
 			}
+			name, version := parseNPMSpec(pkgs[0])
+			return gateResult("npm", name, version)
+		}
+	}
+
+	// --- pnpm add / yarn add <pkg> --- (npm-ecosystem, NOT lockfile-frozen)
+	// A frozen `pnpm/yarn install --frozen-lockfile` was already allowed above;
+	// a bare add is an unpinned install and must be gated through the npm
+	// resolver (PR-TB1-001 listed `pnpm add evil` as a live bypass). pnpm/yarn
+	// do not have an npm-style --save-exact gate here, so we age-gate the named
+	// package directly (a young/unknown package then blocks on age).
+	if m := pnpmYarnAddRe.FindStringIndex(inner); m != nil {
+		pkgs := positionalArgs(inner, m[1])
+		if len(pkgs) > 0 {
 			name, version := parseNPMSpec(pkgs[0])
 			return gateResult("npm", name, version)
 		}
@@ -252,13 +463,32 @@ func ParseInstallCommand(cmd string) ParseResult {
 	// a bare `owner/repo` shorthand with no host. The reference Python hook only
 	// matched a full github.com URL and silently ignored the shorthand — a
 	// gate-bypass gap. We gate both forms here, block-biased per the hard rule.)
-	if m := ghCloneRe.FindStringSubmatch(inner); m != nil {
-		arg := strings.TrimSuffix(m[1], ".git")
-		if gh := ghRepoFromURL.FindStringSubmatch(arg); gh != nil {
-			return gateResult("github", gh[1]+"/"+strings.TrimSuffix(gh[2], ".git"), "")
+	if m := ghCloneVerbRe.FindStringIndex(inner); m != nil {
+		// Scan ALL tokens after the verb (flag-skipping), not just the first one.
+		// A leading flag (`gh repo clone -- owner/repo`,
+		// `gh repo clone --upstream-remote-name x owner/repo`) previously made the
+		// captured token a flag, which bareOwnerRepo rejected → silent ignore
+		// (PR-TB1-004b). We instead find the first token that is a github URL or
+		// a bare owner/repo. A flag VALUE like `x` (after
+		// --upstream-remote-name) has no '/' and matches neither, so it is
+		// correctly skipped. The `--` git-passthrough separator is a flag token.
+		tail := strings.TrimSpace(inner[m[1]:])
+		if loc := shellControl.FindStringIndex(tail); loc != nil {
+			tail = tail[:loc[0]]
 		}
-		if owner, repo, ok := bareOwnerRepo(arg); ok {
-			return gateResult("github", owner+"/"+repo, "")
+		for _, tok := range whitespaceRe.Split(tail, -1) {
+			if tok == "" || tok == "--" || strings.HasPrefix(tok, "-") {
+				continue
+			}
+			arg := strings.TrimSuffix(tok, ".git")
+			if gh := ghRepoFromURL.FindStringSubmatch(arg); gh != nil {
+				return gateResult("github", gh[1]+"/"+strings.TrimSuffix(gh[2], ".git"), "")
+			}
+			if owner, repo, ok := bareOwnerRepo(arg); ok {
+				return gateResult("github", owner+"/"+repo, "")
+			}
+			// A bare token that is neither a URL nor owner/repo (a flag value, a
+			// local dir name): keep scanning — the real repo arg may follow.
 		}
 	}
 
@@ -333,7 +563,48 @@ func ParseInstallCommand(cmd string) ParseResult {
 		}
 	}
 
+	// --- version-less `go get`/`go install <module>` --- (PR-TB1-004a)
+	// An @version-less go fetch is an UNPINNED fetch — the same /lock file
+	// violation `npm install foo` (no version) and `pip install foo` (no ==)
+	// hit. The goGetRe above only matches `\S+@\S+`, so a version-less form
+	// previously fell through to ActionIgnore (silent ALLOW). Block it as
+	// missing-pin for symmetry. (Flags like `go get -u`, `go get ./...`, and a
+	// bare `go get`/`go mod`-style maintenance call carry no installable module
+	// positional and are NOT blocked.)
+	if m := goVerbRe.FindStringIndex(inner); m != nil {
+		mods := positionalArgs(inner, m[1])
+		var mod string
+		for _, p := range mods {
+			// Skip local/relative module patterns (`./...`, `.`, `all`) — these
+			// build the current module, they do not fetch a new one.
+			if isLocalFile(p) || p == "." || p == "all" || p == "./..." {
+				continue
+			}
+			mod = p
+			break
+		}
+		if mod != "" {
+			base := mod
+			if i := strings.LastIndex(mod, "@"); i > 0 {
+				base = mod[:i] // defensive: @version already handled above
+			}
+			return ParseResult{
+				Action: ActionBlock,
+				Reason: "`go " + goVerb(inner) + " " + base + "` is an unpinned fetch — pin an exact version: " + base + "@v1.x.y (the /lock file rule applies to go modules too).",
+			}
+		}
+	}
+
 	return ParseResult{Action: ActionIgnore}
+}
+
+// goVerb returns "get" or "install" for the matched go fetch verb (for the
+// blocked-reason message). Defaults to "get".
+func goVerb(inner string) string {
+	if regexp.MustCompile(`(?i)\bgo\s+install\b`).MatchString(inner) {
+		return "install"
+	}
+	return "get"
 }
 
 // gateResult builds an ActionGate result, or an ActionBlock fail-closed result

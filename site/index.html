@@ -192,19 +192,26 @@
       </div>
 
       <div class="codeblock" aria-label="Verification commands (preview)">
-<pre><span class="c"># 1 — checksum</span>
+<pre><span class="c"># Set once (replace with the real repo + release tag):</span>
+REPO="OWNER/REPO"; TAG="v0.1.0"; BIN="penrush-linux-amd64"
+
+<span class="c"># 1 — checksum</span>
 <span class="k">sha256sum</span> --check --ignore-missing checksums.txt
 
-<span class="c"># 2 — Sigstore signature (keyless)</span>
-<span class="k">cosign</span> verify-blob --bundle checksums.txt.cosign.bundle \
+<span class="c"># 2 — Sigstore signature (keyless) — identity-pinned</span>
+<span class="k">cosign</span> verify-blob \
+  --bundle checksums.txt.cosign.bundle \
+  --certificate-identity-regexp "^https://github.com/${REPO}/\.github/workflows/release\.yml@refs/tags/${TAG}$" \
   --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
   checksums.txt
 
-<span class="c"># 3 — SLSA L3 provenance</span>
+<span class="c"># 3 — SLSA L3 provenance — pinned to this source AND tag</span>
 <span class="k">slsa-verifier</span> verify-artifact "$BIN" \
-  --provenance-path "$BIN.intoto.jsonl" --source-uri "github.com/OWNER/REPO"</pre>
+  --provenance-path "${BIN}.intoto.jsonl" \
+  --source-uri "github.com/${REPO}" \
+  --source-tag "$TAG"</pre>
       </div>
-      <p class="doclink muted">// Full recipe &mdash; including exact identity regex and per-platform artifacts &mdash; ships in <a href="#" id="release-doc-link" aria-disabled="true">docs/RELEASE.md</a> with the first signed release.</p>
+      <p class="doclink muted">// This recipe is kept byte-for-byte in lock-step with <a href="#" id="release-doc-link" aria-disabled="true">docs/RELEASE.md</a> (CI-enforced). Set <span class="mono">REPO</span> and <span class="mono">TAG</span> to the real values; the identity regex and <span class="mono">--source-tag</span> pin the signature and provenance to this repository&rsquo;s release workflow at that tag.</p>
     </div>
   </section>
 

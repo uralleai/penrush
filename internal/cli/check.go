@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/penrush/penrush/internal/audit"
@@ -53,6 +54,9 @@ func runCheck(e *Env, args []string) int {
 		}
 		cfg = def
 	}
+
+	// Audit any config attempt to loosen the cooldown below the floor (PR-P2-01).
+	auditCooldownClamps(home, cfg)
 
 	overrides, oerr := override.Load(penrushdir.OverridesPath(home))
 	if oerr != nil {
@@ -169,6 +173,36 @@ func overrideKeyFor(v gate.Verdict, eco, name string) string {
 		return gate.ArtifactKey(eco, name)
 	}
 	return ""
+}
+
+// auditCooldownClamps emits one audit `policy_changed` event per config key
+// whose cooldown attempted to loosen the gate below the compiled floor and was
+// clamped up (PR-P2-01). A config-driven global disable is thereby never
+// traceless — `penrush audit verify`/`stats` surface the attempt. Best-effort:
+// an audit-write failure here does not block the surrounding check (the clamp
+// itself already held), but is the caller's concern to surface.
+func auditCooldownClamps(home string, cfg *config.Config) {
+	clamps := cfg.LooseningClamps(checkEcosystems)
+	if len(clamps) == 0 {
+		return
+	}
+	log := audit.Open(penrushdir.AuditPath(home))
+	// Deterministic order for stable audit output.
+	keys := make([]string, 0, len(clamps))
+	for k := range clamps {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		_, _ = log.Append(audit.Entry{
+			Command:  "penrush (config load)",
+			Decision: audit.DecisionPolicyChanged,
+			Reason: fmt.Sprintf("config cooldown_days[%q]=%d is below the %d-day floor — clamped up to %d (config may tighten but never loosen below the compiled floor, §C.3). A sub-floor value cannot silently disable the gate.",
+				k, clamps[k], config.MinCooldownDays, config.MinCooldownDays),
+			Actor:        "config",
+			PolicySource: "local",
+		})
+	}
 }
 
 // printVerdict renders the human-readable verdict block.

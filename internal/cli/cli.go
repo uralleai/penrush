@@ -41,6 +41,10 @@ const (
 	ExitPass     = 0
 	ExitBlock    = 1
 	ExitUsageErr = 2
+	// ExitTamper is returned by `penrush audit verify` when the chain fails
+	// verification (INT-05). It is distinct from ExitBlock (a gate denial) and
+	// ExitUsageErr so CI/cron/monitoring can key on tamper specifically.
+	ExitTamper = 3
 )
 
 // Env is the injectable execution environment. Tests construct one pointing at
@@ -108,6 +112,7 @@ Usage:
   penrush check <ecosystem>:<pkg>[@version]  (FR-007 colon form — equivalent)
   penrush override add <key> --reason "..."  add an override (key = <ecosystem>:<artifact>)
   penrush stats                             local-only readout of the audit log (no network)
+  penrush audit verify [--json]             re-walk the audit chain; exit 3 if tampered (CI/cron-friendly)
   penrush hook claude-code                  PreToolUse hook adapter (reads a payload on stdin)
   penrush version                           print version
 
@@ -146,6 +151,8 @@ func Run(e *Env) (code int) {
 		return runOverride(e, e.Args[1:])
 	case "stats":
 		return runStats(e, e.Args[1:])
+	case "audit":
+		return runAudit(e, e.Args[1:])
 	case "hook":
 		return runHook(e, e.Args[1:])
 	case "version", "--version", "-v":

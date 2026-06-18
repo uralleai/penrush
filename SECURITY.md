@@ -80,6 +80,34 @@ RubyGems, the Go module proxy, Docker registries) — report those to the
 respective registry; and the security of artifacts **PenRUSH** evaluates (that is
 the whole point of the gate, not a bug in it).
 
+## Data handling & audit-log redaction (FR-011)
+
+**PenRUSH** stores its decisions in a local, SHA-256-chained `~/.penrush/audit.jsonl`
+and never phones home. Install/override commands can embed credentials (a token
+in an index-URL, a `--reason` that pastes a secret), so every durably stored
+free-text field — the command, the verdict/override reason, and the override key —
+is run through a credential redactor at the single audit write chokepoint, and the
+override store redacts the reason it persists. Deny reasons returned to the agent
+are redacted before they leave the process.
+
+**Honest posture:** redaction is **defense-in-depth, not a guarantee.** It is a
+maintained denylist of credential classes that appear in install/setup commands
+(URL userinfo, machine-token prefixes such as `ghp_`/`hf_`/`sk_live_`/`AIza`,
+HTTP `Authorization: Bearer`/`Basic`, JWTs, credential-named flags including
+`curl -u` and `mysql -p`, and credential env-vars). It cannot recognize every
+possible secret shape. The structural controls — redacting **every** durable
+field at one chokepoint, and binding the **literal on-disk bytes** in the
+tamper-evidence chain (`penrush audit verify`) — bound the durable surface;
+the regex ruleset reduces the residual plaintext within it. If you find a
+credential class that survives into `audit.jsonl`, please report it (see above);
+we treat the ruleset as a corpus that grows with reports.
+
+The chain provides tamper-**evidence** against partial edits (any edit, key
+injection, duplicate key, re-escaping, reorder, deletion, or truncation breaks
+`penrush audit verify`, which exits non-zero so CI/cron can detect it), **not**
+tamper-**proofing** against a local attacker who can delete and re-forge the
+entire file at the user's privilege.
+
 ## External security audit (PH-2)
 
 Before any public / open-source release, **PenRUSH** must pass an independent

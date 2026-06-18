@@ -20,6 +20,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/penrush/penrush/internal/redact"
 )
 
 // SchemaVersion of overrides.json.
@@ -44,6 +46,13 @@ type Override struct {
 	ExpiresAt string  `json:"expires_at"`
 	Approver  *string `json:"approver"` // v1 team-mode seam; always null at v0
 	Scope     string  `json:"scope"`    // always "exact" at v0
+	// Version is the artifact version reviewed at override-add time, when the
+	// operator supplied one (PR-P2-02). Empty = no version was reviewed (legacy
+	// version-blind override). When set, the gate treats the override as
+	// approving ONLY that version: a DIFFERENT version re-enters the age gate
+	// rather than being silently waved through, closing the "reviewed v1.0.0 →
+	// freshly-published-malicious v99 silently allowed" exposure.
+	Version string `json:"version,omitempty"`
 }
 
 // Store mirrors overrides.json.
@@ -88,9 +97,16 @@ func ValidateKey(key string) error {
 	return nil
 }
 
-// Add records an override. Reason is mandatory; ttl<=0 uses DefaultTTL;
-// ttl>MaxTTL is clamped to MaxTTL.
+// Add records a version-blind override (no reviewed version recorded).
+// Reason is mandatory; ttl<=0 uses DefaultTTL; ttl>MaxTTL is clamped to MaxTTL.
 func (s *Store) Add(key, reason string, ttl time.Duration, now time.Time) (Override, error) {
+	return s.AddWithVersion(key, reason, "", ttl, now)
+}
+
+// AddWithVersion records an override, optionally pinning the reviewed version
+// (PR-P2-02). When version != "", the override approves only that version; a
+// different version re-enters the age gate at use time.
+func (s *Store) AddWithVersion(key, reason, version string, ttl time.Duration, now time.Time) (Override, error) {
 	if err := ValidateKey(key); err != nil {
 		return Override{}, err
 	}
@@ -103,18 +119,24 @@ func (s *Store) Add(key, reason string, ttl time.Duration, now time.Time) (Overr
 	if ttl > MaxTTL {
 		ttl = MaxTTL
 	}
+	// Redact credentials from the persisted reason (PR-P2-03): overrides.json is
+	// a second durable store of the operator's free-text reason, outside the
+	// audit chain's redaction. The same FR-011 rule applies — no plaintext token
+	// in any durable store.
+	reason = redact.String(reason)
 	o := Override{
 		Reason:    reason,
 		CreatedAt: now.UTC().Format(time.RFC3339),
 		ExpiresAt: now.UTC().Add(ttl).Format(time.RFC3339),
 		Approver:  nil,
 		Scope:     "exact",
+		Version:   strings.TrimSpace(version),
 	}
 	s.Overrides[key] = o
 	return o, s.save()
 }
 
-// Active reports whether key has an unexpired override.
+// Active reports whether key has an unexpired override (version-blind).
 func (s *Store) Active(key string, now time.Time) bool {
 	o, ok := s.Overrides[key]
 	if !ok {
@@ -125,6 +147,28 @@ func (s *Store) Active(key string, now time.Time) bool {
 		return false // unparseable expiry = inactive (fail closed)
 	}
 	return exp.After(now)
+}
+
+// AppliesTo reports whether key has an unexpired override that applies to the
+// given version (PR-P2-02). An override with a recorded Version applies ONLY to
+// that exact version; a version-less (legacy) override applies to any version
+// (preserving v0 UX). When the override exists+is unexpired but its recorded
+// version does NOT match the requested one, this returns false so the caller
+// re-enters the age gate instead of silently passing a different (possibly
+// freshly-published-malicious) version.
+func (s *Store) AppliesTo(key, version string, now time.Time) bool {
+	o, ok := s.Overrides[key]
+	if !ok {
+		return false
+	}
+	exp, err := time.Parse(time.RFC3339, o.ExpiresAt)
+	if err != nil || !exp.After(now) {
+		return false
+	}
+	if o.Version == "" {
+		return true // version-blind override: applies to any version
+	}
+	return o.Version == strings.TrimSpace(version)
 }
 
 // Get returns the override for key, if present.

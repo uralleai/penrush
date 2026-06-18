@@ -11,12 +11,20 @@
 // log. The chain gives tamper-EVIDENCE against partial edits, not
 // tamper-PROOFING against full replacement.
 //
-// Credential redaction (FR-011): Append runs redact.String over the Command
-// field unconditionally. No caller can write an unredacted command.
+// Credential redaction (FR-011): Append runs redact.String over EVERY durably
+// stored free-text field (Command, Reason, OverrideKey) unconditionally, at a
+// single chokepoint. No caller can write an unredacted secret into any field.
+//
+// Tamper-evidence scope (INT-02): the chain binds the LITERAL on-disk bytes,
+// not a re-derived projection. Verify rejects any line that is not byte-equal
+// to the canonical re-serialization of its parsed struct, so key injection,
+// duplicate keys, \uXXXX re-encoding, key reordering and insignificant
+// whitespace are all detected — not only flips of bytes the struct represents.
 package audit
 
 import (
 	"bufio"
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -43,6 +51,7 @@ const (
 	DecisionOverrideUsed  = "override_used"
 	DecisionOverrideAdded = "override_added"
 	DecisionInternalError = "internal_error_block" // SC.6 panic-recovery path (M-11 distinguishes it)
+	DecisionPolicyChanged = "policy_changed"       // PR-P2-01: a config value attempted to loosen below the floor and was clamped
 )
 
 // Entry is one audit event. Field set per PRD v1.1 S5.6 plus chain fields.
@@ -180,7 +189,17 @@ func (l *Log) Append(e Entry) (Entry, error) {
 	if e.TS == "" {
 		e.TS = time.Now().UTC().Format(time.RFC3339)
 	}
+	// Credential redaction (FR-011) over EVERY durably-stored free-text field,
+	// not just Command (INT-03, PRIV-01, PR-P2-03). The Reason field embeds the
+	// operator-supplied override --reason and the gate's verdict reason (which
+	// interpolates the raw parsed artifact name — a token-bearing URL on a
+	// `pip install git+https://user:TOKEN@host` command); OverrideKey embeds the
+	// eco:name key. Redacting at this single Append chokepoint means no call path
+	// can write an unredacted secret into the chained log, which is the property
+	// the package doc-comment promises.
 	e.Command = redact.String(e.Command)
+	e.Reason = redact.String(e.Reason)
+	e.OverrideKey = redact.String(e.OverrideKey)
 	if e.GatesRun == nil {
 		e.GatesRun = []string{}
 	}
@@ -217,11 +236,22 @@ type VerifyResult struct {
 	Entries  int
 	OK       bool
 	BadSeq   int64  // first failing seq (0 when OK)
-	BadField string // what failed: "prev_hash" | "entry_hash" | "seq" | "parse"
+	BadField string // what failed: "prev_hash" | "entry_hash" | "seq" | "parse" | "raw_bytes"
 }
 
-// Verify re-walks the whole chain. Any edit, deletion, insertion, or
-// reorder of a prior entry breaks verification.
+// canonicalLine re-serializes a parsed Entry to the EXACT bytes Append writes
+// (json.Marshal of the struct, deterministic field order). Verify compares the
+// raw on-disk line to this; a mismatch means the stored bytes carried something
+// the struct does not (extra keys, duplicate keys, alternate \uXXXX escaping,
+// reordered keys, insignificant whitespace) — i.e. tampering INVISIBLE to a
+// hash taken over the parsed projection (INT-02). Binding the literal bytes is
+// what makes the chain tamper-evidence over the FILE, not over a re-derived
+// projection.
+func canonicalLine(e Entry) ([]byte, error) { return json.Marshal(e) }
+
+// Verify re-walks the whole chain. Any edit, deletion, insertion, reorder, key
+// injection, duplicate-key, or re-escaping of a prior entry breaks
+// verification.
 func (l *Log) Verify() (VerifyResult, error) {
 	f, err := os.Open(l.path)
 	if os.IsNotExist(err) {
@@ -242,8 +272,13 @@ func (l *Log) Verify() (VerifyResult, error) {
 		if len(line) == 0 {
 			continue
 		}
+		// Copy: sc.Bytes() is only valid until the next Scan, and we re-marshal
+		// below.
+		raw := make([]byte, len(line))
+		copy(raw, line)
+
 		var e Entry
-		if err := json.Unmarshal(line, &e); err != nil {
+		if err := json.Unmarshal(raw, &e); err != nil {
 			res.OK, res.BadSeq, res.BadField = false, expectSeq, "parse"
 			return res, nil
 		}
@@ -263,6 +298,20 @@ func (l *Log) Verify() (VerifyResult, error) {
 		}
 		if entryHash(e.PrevHash, canon) != e.EntryHash {
 			res.OK, res.BadSeq, res.BadField = false, e.Seq, "entry_hash"
+			return res, nil
+		}
+		// Byte-binding (INT-02): the stored line MUST be byte-identical to the
+		// canonical re-serialization of the parsed struct. This catches the
+		// projection-escape tampering class (extra keys, duplicate keys,
+		// \uXXXX re-encoding, key reorder, whitespace) that a hash over the
+		// parsed struct alone cannot see.
+		want, merr := canonicalLine(e)
+		if merr != nil {
+			res.OK, res.BadSeq, res.BadField = false, e.Seq, "parse"
+			return res, nil
+		}
+		if !bytes.Equal(raw, want) {
+			res.OK, res.BadSeq, res.BadField = false, e.Seq, "raw_bytes"
 			return res, nil
 		}
 		prev = e.EntryHash
