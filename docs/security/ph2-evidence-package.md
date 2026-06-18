@@ -7,7 +7,7 @@
 | **Status** | 🟡 **Stage-1 internal first-pass COMPLETE.** This is *informative input* to the Stage-2 external firm, **never a substitute** (scope spec §2.3; CTO HYBRID verdict; anchoring-bias control). Stage-2 + Uri financial authorization + LMO E-items remain the precondition for PH-2 PASS. |
 | **Authoritative specs** | scope spec `knowledge/pma/specs/penrush/pentest/internal-stage1-scope-spec-v1.md` · architecture `knowledge/cto/architecture/penrush-phase-0.5.md` §C/§K · Judge methodology `knowledge/judge/audits/penrush-methodology-validation.md` §A.3–A.4 |
 | **Companions** | `docs/security/threat-model.md` (D-9, trust boundaries + attack trees + LINDDUN) · `docs/security/ph2-case-map.md` (per-case verifier map) · `SECURITY.md` (disclosure policy + redaction posture) |
-| **Build under test** | branch `main`, commit `11fe6bd` (chunk-5 remediation) atop `75e52b6` (chunk-5 harness); module `github.com/penrush/penrush` |
+| **Build under test** | branch `main`, commit `aec8acd` (F-1 close) atop `cbf26ba` (evidence package) / `11fe6bd` (chunk-5 remediation) / `75e52b6` (chunk-5 harness); module `github.com/penrush/penrush` |
 | **Toolchain** | **Go 1.26.4** windows/amd64; `toolchain go1.26.4` pinned in `go.mod` |
 
 ---
@@ -58,12 +58,15 @@ Verifier test names are exact (`go test -run <Name>`).
   (`TestOverrideAddRejectsWildcardKey`); active override flips block→pass end-to-end
   across 8 ecosystems (`TestE2EMatrix/*/override`); **version-pinned override does not
   cover a newer version** (`TestVersionPinnedOverrideDoesNotCoverNewerVersion`, PR-P2-02).
-- **Result:** **PASS** with one tracked **LOW** correctness finding (F-1, below — *not*
-  a privilege escalation; it fails *closed*).
+- **Result:** **PASS.** The one tracked **LOW** correctness finding (F-1 — *not* a
+  privilege escalation; it failed *closed*) is now **CLOSED** this run (commit `aec8acd`,
+  regression `TestF1CargoOverrideKeyConsultedThroughDocumentedCommand`).
 - **Control:** mandatory reason; 30-day hard expiry never null; exact-key only;
   version-pinned (a different version re-enters the age gate); every use audit-chained;
-  override-rate KPI.
-- **Residual:** F-1 cargo/crates override-key namespace mismatch (LOW; fails closed).
+  override-rate KPI; **unified ecosystem-token namespace** across resolver `Ecosystem()`,
+  `gate.ArtifactKey`, `check.go` registration, the printed override hint, and
+  `override.knownEcosystems` (F-1 fix).
+- **Residual:** none open. (F-1 closed; was LOW / fails-closed.)
 
 ### P-3 — Audit-log tampering (Tampering / Repudiation) — §C.2 row 3
 
@@ -237,15 +240,17 @@ committed secret**). Exploits re-confirmed closed **through the production hook*
 > `internal/audit/pentest_test.go`, `internal/config/pentest_test.go`,
 > `internal/redact/pentest_test.go`, `internal/gate/pentest_test.go`).
 
-### Still-open finding (honest — NOT fixed this run)
+### Still-open finding — NONE (F-1 CLOSED this run)
 
 | ID | Severity | Case | Finding | Disposition |
 |---|---|---|---|---|
-| **F-1** | **LOW** | P-2 | cargo override-key namespace mismatch: the gate prints `penrush override add cargo:<name>` and looks up `cargo:` (`ArtifactKey("cargo", …)`), but `override.knownEcosystems` accepts only `crates:`. A cargo override is **un-addable** via the documented command and a `crates:`-keyed override is **never consulted**. **Verified open this run** (`go list`/`grep` of `internal/override/override.go` line 38 + `internal/registry/cargo.go` `Ecosystem()→"cargo"` + `internal/cli/check.go` registers `"cargo"`). | **Fails CLOSED** (overrides become *harder*, not easier) → correctly classified LOW, not critical/high. Does **not** block Stage-2 readiness, but **must be fixed before Stage-2 kickoff** per scope spec §2.3: unify the cargo/crates key namespace across `override.knownEcosystems`, the gate `ArtifactKey`, and the printed hint; add a regression test. |
+| **F-1** | **LOW** | P-2 | cargo override-key namespace mismatch: the gate prints `penrush override add cargo:<name>` and looks up `cargo:` (`ArtifactKey("cargo", …)`), but `override.knownEcosystems` accepted only `crates:`. A cargo override was **un-addable** via the documented command and a `crates:`-keyed override was **never consulted**. | ✅ **CLOSED** — commit `aec8acd` (`fix(penrush): close F-1 — unify cargo/crates override-key namespace`). Unified all four touchpoints onto the canonical `"cargo"` token (the value `registry/cargo.go` `Ecosystem()` already returns, `internal/cli/check.go` already registers, and `gate.ArtifactKey` already prints): `override.knownEcosystems` flipped `crates`→`cargo`, plus the doc comment and the `ValidateKey` error message. The other 7 ecosystems unchanged. **Regression test** `TestF1CargoOverrideKeyConsultedThroughDocumentedCommand` (`internal/cli/pentest_test.go`) failed before / passes after: a cargo override added via the documented command key (`penrush override add cargo:serde --version 1.0.0`) is now consulted by the gate and flips block→OVERRIDE-pass for the pinned version, while a *different* version (`serde@2.0.0`) still re-enters the age gate and BLOCKs (PR-P2-02 version-pinning preserved). Verified `go vet ./...` clean, `go build ./...` exit 0, `go test ./... -count=1` green (no cache). |
 
-**Exit-criteria readout (scope spec §2.3):** **zero open critical/high findings locally.**
-All 24 medium+ pentest findings fixed + regression-tested this run. One LOW correctness
-finding (F-1) remains, tracked, fails-closed, scheduled before Stage-2.
+**Exit-criteria readout (scope spec §2.3):** **zero open critical/high findings locally —
+and now zero open findings of any severity.** All 24 medium+ pentest findings fixed +
+regression-tested in commit `11fe6bd`; the one remaining LOW correctness finding (F-1)
+is **CLOSED** in commit `aec8acd` with a fail-before/pass-after regression test. The
+Stage-2-kickoff precondition (scope spec §2.3) is satisfied.
 
 ---
 
@@ -296,7 +301,7 @@ the external engagement with the cheap findings already burned down.
 | **P-6** insider compromise | DEFERRED (process/platform) | Process + platform controls, not Go-test surface; external-firm scope (§3.3) |
 | **cross-OS E2E** | windows-local green; linux/macos DEFERRED-TO-CI | OS-agnostic tests; CI fan-out on push (GODclaude-gated); not asserted as locally run |
 | **FR-010 offline prior-approval pass** | DEFERRED to Gate-7 (later chunk) | The offline column asserts the safe-default fail-closed block; the prior-approval-pass refinement depends on Gate-7; not asserted as existing |
-| **F-1** cargo override key | OPEN (LOW, tracked) | Fails-closed correctness defect; fix scheduled before Stage-2 |
+| **F-1** cargo override key | ✅ CLOSED (commit `aec8acd`) | Fails-closed correctness defect; namespace unified on `"cargo"`; regression test `TestF1CargoOverrideKeyConsultedThroughDocumentedCommand` (fail-before/pass-after) |
 
 ---
 
@@ -322,7 +327,7 @@ stage is **DONE**; the rest are **NOT** CTO's to close unilaterally.
 | Gate | Owner | Status |
 |---|---|---|
 | Stage-1 internal harness: P-1…P-10 + TB1 exercised, 24 medium+ findings remediated + regression-tested, fuzz/property/E2E green, threat-model + evidence package filed | **CTO** | ✅ **DONE** (this package) |
-| F-1 cargo override-key fix (LOW, fails-closed) before Stage-2 kickoff | **CTO** | ⬜ scheduled (does not block Stage-2 *readiness*, blocks Stage-2 *kickoff* per scope §2.3) |
+| F-1 cargo override-key fix (LOW, fails-closed) before Stage-2 kickoff | **CTO** | ✅ **DONE** — commit `aec8acd`, regression test `TestF1CargoOverrideKeyConsultedThroughDocumentedCommand`; Stage-2-kickoff precondition (scope §2.3) satisfied |
 | **External pentest-firm engagement** (HYBRID 2nd arm): RFP **draft-not-sent**; target **$20K–35K** (range $15K–50K) | **Uri** (financial authorization) → PMA executes | ⛔ **BLOCKED on Uri** |
 | Stage-2 external pentest **executed + PASS** (zero open critical/high) | external firm → CTO regression | ⛔ depends on the line above |
 | **LMO E-items** clear (D-1 domain/checkbox text, D-12 liability disclosure reviewing threat-model §2 verbatim) | **LMO** → Uri | ⛔ pending |
@@ -343,7 +348,8 @@ GODclaude-only.
 - Judge `knowledge/judge/audits/penrush-methodology-validation.md` §A.3–A.4 — read 2026-06-18
 - BUILD-PLAN `docs/BUILD-PLAN.md` chunk 5 DoD — read 2026-06-18
 - Live receipts (§0): `go vet`/`go build`/`go test ./...`/`govulncheck ./...`/`go list -m all` + both fuzz targets, Go 1.26.4 windows/amd64, this session 2026-06-18
-- Commits: `11fe6bd` (remediation), `75e52b6` (harness); finding IDs traced via `git grep` of the regression suites
+- Commits: `aec8acd` (F-1 close — `override.knownEcosystems` cargo unify + regression test), `cbf26ba` (evidence package), `11fe6bd` (remediation), `75e52b6` (harness); finding IDs traced via `git grep` of the regression suites
+- F-1 close verification (this run, 2026-06-18): `TestF1CargoOverrideKeyConsultedThroughDocumentedCommand` fail-before/pass-after; `go vet ./...` clean, `go build ./...` exit 0, `go test ./... -count=1` all packages PASS (no cache), Go 1.26.4 windows/amd64
 - Companion: `docs/security/threat-model.md`, `docs/security/ph2-case-map.md`, `SECURITY.md`
 
 *Filed by **CTO**, PH-2 Stage-1. Local results only; no push (GODclaude-only-push hard rule). This package is informative input to the external firm, never a substitute (CTO HYBRID verdict).*
