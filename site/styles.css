@@ -140,6 +140,16 @@ p  { margin: 0 0 var(--s4); max-width: 64ch; }
 }
 .hero p.lede { font-size: 20px; color: var(--fg); max-width: 52ch; }
 
+/* D-12 §5-A clear-and-conspicuous limitation disclosure. Surfaced, not hidden:
+   bordered, full-weight body text on the raised surface — readable, on-brand,
+   not fine print. Lead "What PenRUSH does — and doesn't." is <strong> in markup. */
+.hero p.disclosure {
+  font-size: 15px; line-height: 1.55; color: var(--fg); max-width: 56ch;
+  margin-top: var(--s6); padding: var(--s4) var(--s5);
+  background: var(--surface); border-left: var(--border-emphasis);
+}
+.hero p.disclosure strong { color: var(--accent); }
+
 .hero-cta { display: flex; gap: var(--s4); flex-wrap: wrap; margin-top: var(--s8); }
 
 /* the dial SVG + readout. Readout is a mono gauge strip UNDER the mark, so the

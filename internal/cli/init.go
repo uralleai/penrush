@@ -98,6 +98,9 @@ func runInit(e *Env, args []string) int {
 	fmt.Fprintf(e.Stdout, "  cache/         ready\n")
 	fmt.Fprintf(e.Stdout, "\nDefaults: %d-day cool-down, on_internal_error=block, telemetry=off.\n",
 		config.DefaultCooldownDays)
+	// LMO D-12 §5-B capability qualifier — VERBATIM, surfaced on init so the
+	// material limitation rides every install channel (incl. brew/pip/npm).
+	fmt.Fprintf(e.Stdout, "\n%s\n", CapabilityNotice)
 	fmt.Fprintf(e.Stdout, "Next: %s\n", e.bold("penrush check npm left-pad@1.3.0"))
 	return ExitPass
 }

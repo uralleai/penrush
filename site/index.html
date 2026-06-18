@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PenRUSH — don't rush to download.</title>
-<meta name="description" content="PenRUSH is a pre-install pre-flight gate that blocks supply-chain attacks before they land. A 14-day publication-age cooldown across npm, PyPI, crates, gems, Go, and more. Open-source, runs locally, no signup.">
+<meta name="description" content="A pre-install pre-flight gate that holds fresh, unvetted packages until the ecosystem has had time to catch problems — so risky installs wait, not land on your machine. A 14-day publication-age cooldown across npm, PyPI, crates, gems, Go, and more. Open-source, runs locally, no signup.">
 
 <!-- ====================================================================
      Content-Security-Policy — strict, self-only, zero egress.
@@ -29,7 +29,7 @@
      host required for the page itself; absolute URL filled at deploy). -->
 <meta property="og:type" content="website">
 <meta property="og:title" content="PenRUSH — don't rush to download.">
-<meta property="og:description" content="A pre-install pre-flight gate that blocks supply-chain attacks before they land.">
+<meta property="og:description" content="A pre-install pre-flight gate that holds fresh, unvetted packages until the ecosystem has had time to catch problems — so risky installs wait, not land on your machine.">
 <meta property="og:image" content="assets/icons/icon-512.png">
 <meta name="twitter:card" content="summary_large_image">
 
@@ -70,7 +70,14 @@
         <p class="gauge-label">Supply-chain pre-flight gate</p>
         <h1 id="hero-h">Don't let a fresh package <span class="accent">land before you do.</span></h1>
         <p class="tagline">don't rush to download.</p>
-        <p class="lede">PenRUSH is a pre-install pre-flight gate that blocks supply-chain attacks before they land.</p>
+        <p class="lede">PenRUSH is a pre-install pre-flight gate. It holds fresh and unpinned packages back across npm, PyPI, crates, gems, and Go — and fails closed on anything it can't safely parse.</p>
+
+        <!-- D-12 §5-A user-facing limitation disclosure — LMO-cleared verbatim.
+             Clear-and-conspicuous, directly beneath the hero lede (NOT buried in
+             the footer or ToS). Source: knowledge/lmo/reviews/penrush/D-12-liability-disclosure.md §5-A.
+             DO NOT paraphrase — any change requires LMO re-review (D-16). -->
+        <p class="disclosure"><strong>What PenRUSH does — and doesn't.</strong> PenRUSH holds risky installs back and raises the cost of supply-chain attacks. It is not a malware scanner and not a guarantee: it cannot make every install safe, and a determined attacker who fully controls the command can work around any pre-install gate. A passing result means "cleared the age/pin policy," not "certified safe."</p>
+
         <div class="hero-cta">
           <a class="btn btn-primary" href="#download">Get PenRUSH</a>
           <a class="btn" href="#how">How it works</a>

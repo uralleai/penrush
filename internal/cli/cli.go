@@ -22,6 +22,14 @@ import (
 	"github.com/penrush/penrush/internal/registry"
 )
 
+// CapabilityNotice is the LMO D-12 §5-B user-facing capability qualifier,
+// reproduced VERBATIM (knowledge/lmo/reviews/penrush/D-12-liability-disclosure.md
+// §5-B). It rides every channel — including brew/pip/npm package-manager installs
+// that never see the site or the ToS checkbox — so the material limitation
+// (not a malware scanner, not a guarantee) travels with the tool itself.
+// DO NOT paraphrase: any change requires LMO re-review (D-16).
+const CapabilityNotice = "PenRUSH gates risky installs and raises attacker cost — it is not a malware scanner and not a guarantee. `penrush --license` for AS-IS terms."
+
 // Version is the CLI version string. main.go may override it (ldflags) and it
 // is mirrored into the registry User-Agent.
 var Version = "0.1.0-dev"
@@ -124,7 +132,9 @@ Ecosystems in this build: npm, pypi, github, cargo, gem, go, docker, mcp
 Global behavior:
   - fail-closed: an unreachable registry BLOCKS (never warn-and-pass)
   - no telemetry, no phone-home — everything stays in ~/.penrush/
-  - NO_COLOR honored; output is plain when piped`
+  - NO_COLOR honored; output is plain when piped
+
+` + CapabilityNotice
 
 // Run dispatches to the subcommand and returns a process exit code. It NEVER
 // panics out: a recovered panic becomes an internal-error block (§C.6) so a

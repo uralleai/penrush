@@ -432,6 +432,46 @@ func TestVersionCommandCommitStamp(t *testing.T) {
 	}
 }
 
+// D-12 §5-B: the LMO-cleared capability qualifier must be present, VERBATIM, in
+// the user-facing CLI output so the material limitation (not a malware scanner,
+// not a guarantee) rides every channel — including package-manager installs that
+// never see the site or the ToS checkbox. Assert both surfaces: `init` and the
+// help/usage banner. The exact string is locked; paraphrase = LMO re-review (D-16).
+func TestCapabilityNoticeVerbatim(t *testing.T) {
+	const want = "PenRUSH gates risky installs and raises attacker cost — it is not a malware scanner and not a guarantee. `penrush --license` for AS-IS terms."
+
+	// The exported constant itself must be byte-for-byte the cleared text.
+	if CapabilityNotice != want {
+		t.Fatalf("CapabilityNotice drifted from the LMO D-12 §5-B verbatim text:\n got: %q\nwant: %q", CapabilityNotice, want)
+	}
+
+	// Surface 1 — `penrush init` prints it.
+	einit, outInit, _ := newEnv(t, "init")
+	if code := Run(einit); code != ExitPass {
+		t.Fatalf("init exit = %d, want %d", code, ExitPass)
+	}
+	if !strings.Contains(outInit.String(), want) {
+		t.Fatalf("penrush init must print the D-12 capability qualifier verbatim, got:\n%s", outInit.String())
+	}
+
+	// Surface 2 — the help/usage banner carries it (so `penrush help` / no-args do too).
+	ehelp, outHelp, _ := newEnv(t, "help")
+	if code := Run(ehelp); code != ExitPass {
+		t.Fatalf("help exit = %d, want %d", code, ExitPass)
+	}
+	if !strings.Contains(outHelp.String(), want) {
+		t.Fatalf("penrush help must carry the D-12 capability qualifier verbatim, got:\n%s", outHelp.String())
+	}
+
+	// Negative guard: the FORBIDDEN unqualified overclaim must never appear in
+	// CLI output (D-12 §3.3).
+	for _, surface := range []string{outInit.String(), outHelp.String()} {
+		if strings.Contains(strings.ToLower(surface), "blocks supply-chain attacks") {
+			t.Fatalf("FORBIDDEN overclaim 'blocks supply-chain attacks' present in CLI output:\n%s", surface)
+		}
+	}
+}
+
 // NO_COLOR / non-TTY behavior is decided in main.colorEnabled, but the cli
 // accent helpers must produce plain output when Color is false. Pin it so a
 // piped check is greppable.
