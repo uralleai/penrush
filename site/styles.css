@@ -265,6 +265,23 @@ p  { margin: 0 0 var(--s4); max-width: 64ch; }
 .download-action { display: flex; flex-direction: column; gap: var(--s5); }
 .download-action .btn-primary { width: 100%; justify-content: center; font-size: 16px; padding-block: var(--s5); }
 
+/* resolved-artifact caption — the exact file the OS-detected button serves */
+.artifact-note {
+  font-family: var(--font-mono); font-weight: 400; font-size: 13px;
+  letter-spacing: 0.02em; color: var(--muted); margin: 0;
+}
+.artifact-note .mono { color: var(--fg); font-weight: 500; }
+.artifact-note .artifact-arch { display: block; margin-top: var(--s1); color: var(--muted); }
+
+/* always-visible: every OS/arch + verification on the release page. Prominent —
+   set off with a top hairline so arm64 / Apple-Silicon users can't miss it. */
+.all-platforms {
+  font-family: var(--font-mono); font-weight: 500; font-size: 14px;
+  letter-spacing: 0.02em; line-height: 1.6; margin: 0;
+  border-top: var(--border-hairline); padding-top: var(--s5);
+}
+.all-platforms a { color: var(--accent); }
+
 /* the honest "ships after audit" note — shown while gated */
 .gate-note {
   font-family: var(--font-mono); font-weight: 400; font-size: 14px; line-height: 1.7;

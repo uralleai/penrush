@@ -140,10 +140,10 @@
         <p class="gauge-label">Download</p>
         <h2 id="dl-h">Get PenRUSH</h2>
 
-        <!-- Gate status strip — reflects RELEASE_AVAILABLE -->
+        <!-- Gate status strip — reflects RELEASE_AVAILABLE (JS confirms the tag) -->
         <p class="gate-status" id="gate-status" role="status">
           <span class="dot" aria-hidden="true"></span>
-          <span id="gate-status-text">Releases pending security audit</span>
+          <span id="gate-status-text">Latest release v0.1.0</span>
         </p>
 
         <!-- Consent — LMO-cleared verbatim string (47 words). DO NOT paraphrase.
@@ -155,18 +155,33 @@
         </label>
 
         <div class="download-action">
-          <!-- Inert until BOTH the consent box is checked AND RELEASE_AVAILABLE is true.
-               No real binary URL exists yet (PH-2-gated). See app.js. -->
+          <!-- Inert until the consent box is checked (RELEASE_AVAILABLE is true).
+               app.js detects the visitor OS client-side and points this button at
+               the matching signed binary on GitHub Releases (v0.1.0). -->
           <a id="download-btn" class="btn btn-primary" role="button"
-             aria-disabled="true" tabindex="-1" href="#download"
-             data-href-template="">
-            Download &mdash; awaiting security audit
+             aria-disabled="true" tabindex="-1" href="#download">
+            Download PenRUSH
           </a>
           <p class="consent-hint" id="consent-hint" aria-live="polite"></p>
 
+          <!-- Resolved-artifact caption — the exact file the OS-detected button
+               serves. Revealed by app.js after client-side OS detection. -->
+          <p class="artifact-note" id="artifact-note" hidden>
+            Detected build: <span id="artifact-name" class="mono"></span>
+            <span class="artifact-arch" id="artifact-arch"></span>
+          </p>
+
+          <!-- Always visible, no-JS-safe: the full asset list (every OS/arch,
+               Intel & Apple Silicon) + checksums + signatures on the release page.
+               This is how arm64 / Apple-Silicon users get the exact right binary. -->
+          <p class="all-platforms">
+            <a href="https://github.com/uralleai/penrush/releases/tag/v0.1.0" target="_blank" rel="noopener">All platforms &mdash; Linux / macOS / Windows, Intel &amp; Apple&nbsp;Silicon (arm64), checksums&nbsp;+&nbsp;signatures &rarr;</a>
+          </p>
+
+          <!-- Live "verify your download" pointer. -->
           <p class="gate-note" id="gate-note">
-            <strong>Verified, signed releases ship after PenRUSH&rsquo;s own independent security audit &mdash; by design.</strong>
-            We don&rsquo;t hand you a security tool that hasn&rsquo;t cleared a pentest first. When the audit passes, this button serves the signed binary from GitHub Releases, with the verification recipe below.
+            <strong>Verify before you run it.</strong>
+            Every release is reproducibly built, <span class="mono">cosign</span>-signed, and ships with SLSA&nbsp;L3 provenance. Confirm the binary with the three-check recipe below, or on the <a href="https://github.com/uralleai/penrush/releases/tag/v0.1.0" target="_blank" rel="noopener">release page</a>.
           </p>
         </div>
       </div>
@@ -199,8 +214,8 @@
       </div>
 
       <div class="codeblock" aria-label="Verification commands (preview)">
-<pre><span class="c"># Set once (replace with the real repo + release tag):</span>
-REPO="OWNER/REPO"; TAG="v0.1.0"; BIN="penrush-linux-amd64"
+<pre><span class="c"># Set once (BIN = your platform's artifact from the release):</span>
+REPO="uralleai/penrush"; TAG="v0.1.0"; BIN="penrush-linux-amd64"
 
 <span class="c"># 1 — checksum</span>
 <span class="k">sha256sum</span> --check --ignore-missing checksums.txt
@@ -218,7 +233,7 @@ REPO="OWNER/REPO"; TAG="v0.1.0"; BIN="penrush-linux-amd64"
   --source-uri "github.com/${REPO}" \
   --source-tag "$TAG"</pre>
       </div>
-      <p class="doclink muted">// This recipe is kept byte-for-byte in lock-step with <a href="#" id="release-doc-link" aria-disabled="true">docs/RELEASE.md</a> (CI-enforced). Set <span class="mono">REPO</span> and <span class="mono">TAG</span> to the real values; the identity regex and <span class="mono">--source-tag</span> pin the signature and provenance to this repository&rsquo;s release workflow at that tag.</p>
+      <p class="doclink muted">// This recipe is kept byte-for-byte in lock-step with <a href="#" id="release-doc-link" aria-disabled="true">docs/RELEASE.md</a> (CI-enforced). <span class="mono">REPO</span> and <span class="mono">TAG</span> are set to the real v0.1.0 values above &mdash; set <span class="mono">BIN</span> to your platform&rsquo;s artifact; the identity regex and <span class="mono">--source-tag</span> pin the signature and provenance to this repository&rsquo;s release workflow at that tag.</p>
     </div>
   </section>
 
@@ -233,8 +248,8 @@ REPO="OWNER/REPO"; TAG="v0.1.0"; BIN="penrush-linux-amd64"
     </div>
     <nav aria-label="Footer">
       <a href="terms.html">Terms of Use</a>
-      <!-- GitHub repo placeholder — public repo is PH-2-gated -->
-      <span class="pending" title="Public repository opens after the PH-2 security audit">GitHub &mdash; soon</span>
+      <!-- Public repository -->
+      <a href="https://github.com/uralleai/penrush" target="_blank" rel="noopener">GitHub</a>
       <a href="LICENSE">License &middot; Apache-2.0</a>
     </nav>
     <p class="legal">
