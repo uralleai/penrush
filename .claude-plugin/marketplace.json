@@ -1,0 +1,36 @@
+{
+  "name": "penrush",
+  "description": "Marketplace for PenRUSH — a pre-install supply-chain gate for Claude Code that gates dependency installs on a publication-age cool-down before they run.",
+  "owner": {
+    "name": "uralleai"
+  },
+  "plugins": [
+    {
+      "name": "penrush",
+      "source": "./penrush-plugin",
+      "description": "Pre-install supply-chain gate — don't rush to download. Gates npm/PyPI/cargo/RubyGems/Go/GitHub/Docker/MCP installs on a publication-age cool-down before Claude runs them.",
+      "version": "0.1.0",
+      "author": {
+        "name": "PenBag / PSS"
+      },
+      "homepage": "https://penbag.store",
+      "license": "Apache-2.0",
+      "keywords": [
+        "supply-chain",
+        "cool-down",
+        "publication-age",
+        "pre-install",
+        "dependencies",
+        "npm",
+        "pypi",
+        "cargo",
+        "rubygems",
+        "go",
+        "github",
+        "docker",
+        "mcp"
+      ],
+      "category": "security"
+    }
+  ]
+}
