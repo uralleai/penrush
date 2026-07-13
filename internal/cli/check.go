@@ -86,7 +86,21 @@ func runCheck(e *Env, args []string) int {
 	ctx := context.Background()
 	v := eng.CheckGate1(ctx, eco, name, version)
 	e.printVerdict(eco, name, version, v)
-	return e.auditAndExit(home, eco, name, version, v, cfg, false)
+	g1Exit := e.auditAndExit(home, eco, name, version, v, cfg, false)
+
+	// Gate 8 (FR-106, v-next): additive content-analysis gate. buildGate8
+	// returns nil when disabled (the default) → behavior is byte-identical to
+	// v0.1.0 and this branch is never entered.
+	if g8 := e.buildGate8(eng, cfg); g8 != nil {
+		v8 := g8.Check(ctx, eco, name, version, v.Decision == gate.Block)
+		e.printGate8Verdict(eco, name, version, v8)
+		g8Exit := e.auditAndExit(home, eco, name, version, v8, cfg, false)
+		if g1Exit == ExitBlock || g8Exit == ExitBlock {
+			return ExitBlock
+		}
+		return ExitPass
+	}
+	return g1Exit
 }
 
 // resolvers builds the per-ecosystem resolver set for this build. A test may
