@@ -19,6 +19,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/penrush/penrush/internal/gate"
 	"github.com/penrush/penrush/internal/registry"
 )
 
@@ -78,6 +79,11 @@ type Env struct {
 	// wires it to os.Stdin; tests supply a bytes.Reader. nil means no stdin
 	// (the hook treats that as a parse failure → fail-closed).
 	Stdin io.Reader
+	// Gate8Scanner, when non-nil, overrides the Gate-8 payload scanner (the
+	// test seam — a stub returning crafted contents, no network). Production
+	// leaves it nil and the hardened payload.Scanner is built. It is consulted
+	// ONLY when config gate8_enabled is true.
+	Gate8Scanner gate.PayloadScanner
 }
 
 // stdin returns the injected stdin reader (nil when unset).

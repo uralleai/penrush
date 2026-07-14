@@ -16,6 +16,36 @@ This document covers two audiences:
 
 ---
 
+## v-next (unreleased) — Gate 8 / FR-106 install-time content analysis
+
+**Landed behind a default-OFF flag; NOT part of v0.1.0's shipped scope.** Chunk 6
+adds **Gate 8**, the first gate that fetches a package payload and statically
+scans its install-lifecycle hooks for a fetch-remote-then-execute pattern
+(`internal/payload` + `internal/installscan` + `internal/gate/gate8.go`). It
+rides the unchanged `Verdict`/`Engine` seam and is enabled only by the new
+config key **`gate8_enabled`** (default `false`). With it off, **PenRUSH**
+behavior is byte-identical to v0.1.0 — no payload is ever fetched.
+
+> **🔴 Go-live is gated on its own pentest (PH-2b).** Because Gate 8 fetches and
+> parses *untrusted package payloads* (a materially larger attack surface than
+> v0's metadata-only path — decompression bombs, zip-slip, symlink escape, SSRF,
+> parser-DoS), it does **not** ride v0's PH-2. FR-106 must not be enabled in a
+> shipped configuration until PH-2b (cases PA-1…PA-9) passes.
+
+**Honest capability limit (verbatim, binding — LMO D-12; ships in every
+user-facing surface when FR-106 goes live).** FR-106 is **static analysis
+only**. It is **evadable by obfuscation** (base64/hex URLs, string
+concatenation, indirection through a downloaded interpreter) and by
+dynamically-constructed commands. It **fails closed on unparseable input**. It
+**raises attacker cost; it is not proof of safety.**
+
+Known deferral: live **Docker** image-config fetch (OCI manifest→config-blob
+resolution) is deferred to the PH-2b follow-up. Docker RUN-history detection is
+implemented and tested; a live docker scan currently fails closed with a clear
+reason rather than silently passing. Tracked in the CTO tech-debt register.
+
+---
+
 ## Part 1 — Cutting a release (maintainers)
 
 ### Pre-flight

@@ -46,6 +46,13 @@ type Config struct {
 	Telemetry       string         `json:"telemetry"`         // always "off" at v0
 	GithubTokenEnv  string         `json:"github_token_env"`  // opt-in env-var NAME to read a GitHub token from (never the token itself)
 	CacheHMACKey    string         `json:"cache_hmac_key"`    // per-install random key, hex (SB.3 cache integrity)
+	// Gate8Enabled opts into the v-next content-analysis gate (FR-106 / Chunk 6):
+	// fetch the package payload and statically scan its install-lifecycle hooks
+	// for remote-code-on-install. DEFAULT false — with it off, PenRUSH behavior
+	// is byte-identical to v0.1.0 (Gate 8 is never constructed and no payload is
+	// ever fetched). Ships disabled: FR-106 does not go live until its own PH-2b
+	// pentest passes.
+	Gate8Enabled bool `json:"gate8_enabled"`
 }
 
 // Default returns a fresh config with a newly generated cache HMAC key.

@@ -221,6 +221,10 @@ func runHookClaudeCode(e *Env) (code int) {
 		Now:       e.Now,
 	}
 
+	// Gate 8 (FR-106, v-next): nil when disabled (default) → byte-identical to
+	// v0.1.0. Built once, run per gated segment.
+	g8 := e.buildGate8(eng, cfg)
+
 	log := audit.Open(penrushdir.AuditPath(home))
 	var firstBlock *gate.Verdict
 	allowReasons := make([]string, 0, len(gates))
@@ -243,6 +247,22 @@ func runHookClaudeCode(e *Env) (code int) {
 		default:
 			if firstBlock == nil {
 				vc := v
+				firstBlock = &vc
+			}
+		}
+
+		// 5a. Gate 8 (content analysis) per segment, short-circuiting when the
+		//     age gate already blocked this segment (no wasted payload fetch).
+		if g8 != nil {
+			v8 := g8.Check(context.Background(), pr.Eco, pr.Name, pr.Version, v.Decision == gate.Block)
+			e8 := verdictToAudit(pr.Eco, pr.Name, pr.Version, v8)
+			e8.Command = cmd
+			e8.Actor = "claude-code-hook"
+			if _, aerr := log.Append(e8); aerr != nil {
+				return failClosed(e, fmt.Sprintf("could not write Gate-8 audit entry (%v) — fail-closed.", aerr))
+			}
+			if v8.Decision == gate.Block && firstBlock == nil {
+				vc := v8
 				firstBlock = &vc
 			}
 		}

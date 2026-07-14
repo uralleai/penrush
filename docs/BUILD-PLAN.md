@@ -4,7 +4,7 @@
 |---|---|
 | **Product** | **PenRUSH** (internal codename: DSPC) — *"don't rush to download"* |
 | **Document** | D-7 incremental build roadmap — chunk-by-chunk Definition of Done |
-| **Status** | Living plan. Chunk 1 ✅ DONE + green. Chunks 2–5 specified below. |
+| **Status** | Living plan. Chunks 1–5 ✅ DONE + green; **v0.1.0 LAUNCHED** (public, metadata-only). **Chunk 6 = v-next, PLAN ONLY — GATED** (§Chunk 6 below). |
 | **Upstream** | Architecture v1.0-RATIFIED (`knowledge/cto/architecture/penrush-phase-0.5.md`) · PRD v1.0/v1.1 (`MD/DSPC-Product-PRD-v0.1.md`) · Execution Plan (`knowledge/pma/specs/penrush/EXECUTION-PLAN.md`) |
 | **Author** | **CTO** |
 | **Date** | 2026-06-16 |
@@ -152,6 +152,40 @@
 
 ---
 
+## Chunk 6 — Install-time remote-code-execution gate (FR-106, capability #3) — 🟡 v-next · PLAN ONLY · GATED
+
+> **First content-analysis gate.** Ships **PenRUSH**'s first *fetch-payload-and-statically-scan* subsystem ("Gate 8") — the first gate that inspects package **contents** (install-lifecycle hooks), not just registry **metadata**. Strictly **post-launch v-next**: it does **not** block, gate, or alter the launched **v0.1.0**. Numbering continues the chunk sequence; it is not part of the v0 launch path (chunks 3–5).
+>
+> **🔴 BUILD GATE (binding — both must clear before any code):** Chunk-6 build starts **only after (a)** Uri approves the v-next architecture delta + this Build-Plan Chunk 6, **and (b)** the separate **Chunk-6 pentest-posture decision** (PH-2b internal-first-vs-external + budget). Until both clear: no `internal/payload`, no `internal/installscan`, no Gate 8, no v0 change. `git push` remains GODclaude-only.
+
+**Goal:** add a new **Gate 8** that fetches the package payload, reads its install-lifecycle hooks, and statically detects a *fetch-remote-then-execute* pattern (FR-106) — behind the **unchanged** `gate.Engine`/`Verdict` seam, exactly like chunk 2's resolvers rode the `registry.Resolver` seam.
+
+**Upstream:** PRD **v1.2 §5.7 FR-106** + §4.4 (`MD/DSPC-Product-PRD-v0.1.md`) · roadmap addendum **§4b** (`knowledge/pma/specs/penrush/roadmap-addendum-vnext-content-analysis-gates-v1.md`) · **v-next architecture delta** (`knowledge/cto/architecture/penrush-vnext-content-analysis-delta.md`) — the authoritative subsystem design for this chunk.
+
+**Scope (per the architecture delta §V1–§V4):**
+- **`internal/payload` (new)** — resolve the artifact-download URL from the metadata `internal/registry` already fetched (npm `dist.tarball` · PyPI `urls[].url` · crates download endpoint · RubyGems `.gem` url · Docker config-blob ref); **SSRF-validate** it (https-only + per-ecosystem host allowlist + private/loopback/link-local IP reject + off-allowlist-redirect reject); hardened fetch reusing the §D.1 posture; **bounded, in-memory, read-only** archive scan — **no disk write** (delta §V4.4). Stdlib only (`archive/tar`·`archive/zip`·`compress/gzip`·`compress/bzip2`·`io`·`net/http`·`net/url`·`net`).
+- **`internal/installscan` (new)** — per-ecosystem lifecycle-hook locator (npm `package.json` scripts · PyPI `setup.py`+`.py` build hooks, `pyproject.toml` backend via bounded byte-scan · cargo `build.rs` · gem `extconf.rb`/`ext/**` by path-convention · Docker `RUN` from image-config `history[].created_by`) + a bounded **fetch-sink ∧ exec-sink** co-occurrence scanner; unparseable → **fail-closed**. Stdlib only (`encoding/json`·`regexp`·`strings`·`bytes`). **Never executes payload code** (delta §V4.9).
+- **`internal/gate/gate8.go` (new)** — wires the above behind the **unchanged** `gate/gate.go` `Verdict`/`Engine`; emits **HIGH** `remote-code-on-install` (→ block) and **MEDIUM** `install-script-present` (→ advisory); Go modules → **`G8: n/a`** (never false-blocks). Short-circuits (no payload fetch) when a cheaper hard gate already blocks (delta §V1.2 — the 14-day age gate naturally defers heavy scans to survivors).
+- **Zero-dep posture (held for v0 of FR-106):** all fetch/unpack/scan needs are Go stdlib; `pyproject.toml` (TOML) + gemspec (YAML) are **enrichment, deferred** — detection runs on text/JSON source files, not structured config (delta §V1.4). **IF** enrichment is later pursued, one DSPC-cleared parser per format under `/cool down` (≥14-day age) + `/lock file` (exact-pin+hash), recorded in `docs/dspc/<dep>.md` per arch §A.2.
+- **Reuse, no new stores:** Gate-8 findings flow through the existing override store (mandatory reason, 30-day expiry, exact-key) and the SHA-256-chained audit log with credential redaction (FR-011); verdict cached per `{ecosystem,name,version,digest}` inside the §B.3 HMAC cache perimeter.
+- **🔴 Own pentest scope (binding) — PH-2b:** because Chunk 6 fetches + parses **untrusted package payloads** (archive-bomb · zip-slip / path-traversal · symlink escape · SSRF · parser-DoS · nested-archive — a materially larger surface than metadata-only v0), it gets its **own** PH-2-style scope (cases PA-1…PA-9, delta §V4.10) **before it ships**. It **does NOT ride the v0 pentest** and never touches v0 (PRD §4.4 launch-firewall; addendum §5 cond. 3).
+
+**Definition of Done:**
+- [ ] `internal/payload` fetches + reads the 5 script-bearing ecosystems' archives; **decompression-bomb (uncompressed+count+per-entry caps) · zip-slip · symlink-reject · nested-depth-cap · SSRF-allowlist** defenses tested; **no disk write**; **never executes** payload code (delta §V4).
+- [ ] `internal/installscan` locates lifecycle hooks per ecosystem (npm/pip incl. `pyproject.toml` backend/cargo/gem/docker) and flags fetch∧exec; benign install scripts → advisory only; Go → `n/a`.
+- [ ] **All 8 FR-106 acceptance criteria green** (PRD §5.7): npm/pypi/cargo/gem/docker HIGH-block · benign `node-gyp rebuild` advisory · Go `G8: n/a` · unparseable fail-closed · honest-limit doc line shipped in user-facing docs.
+- [ ] **Zero change** to `gate/gate.go` `Verdict`/`Engine` surface (Gate 8 rides the proven seam, like chunk 2); with Gate 8 disabled, behavior is byte-identical to v0.1.0.
+- [ ] Recorded-fixture integration tests (**zero live calls in CI**); **two fuzz targets** — the install-script parser (highest bypass-risk) + the archive/decompression decoder; **property tests** — no-execution invariant (§V4.9), blocked-install-leaves-manifests-byte-identical (NFR-007), any parse failure → fail-closed.
+- [ ] Latency budget honored: payload fetch only on install-like commands that reach Gate 8 and pass the metadata gates; verdict cached per artifact-version-digest; no-match/cached paths unchanged (arch §J; delta §V6).
+- [ ] **PH-2b own-pentest evidence package** (PA-1…PA-9) assembled and passed **before any public shipment** — distinct from v0's PH-2.
+- [ ] `go build ./...` exit 0; `go test ./...` PASS; `go vet ./...` clean; coverage ≥ 80% new files (CTO standard).
+
+**Maps to:** PRD **v1.2 §5.7 FR-106** + §4.4 · roadmap addendum §4b · architecture delta §V1–§V9 (extends arch §A.6 new-module-behind-seam, §C new threat rows, §K fuzz/property/integration). Internal-DSPC twin of #3 (automate Gate 6/6b via SkillSpector): addendum §6, routed to GODclaude.
+
+**Risk / dependency:** **two go-live gates** — (a) Uri approval of the delta + this chunk, (b) the Chunk-6 pentest-posture decision (PH-2b internal-first-vs-external + budget, same $15K–50K external band as v0's PH-2 per arch §X — CFA/Uri call). Zero-dep held for v0 (delta §V1.4). No external code dependency; the seam is proven (chunks 1–2). Endpoints re-verified against the fact-check rule at build time.
+
+---
+
 ## Cross-cutting (spans chunks 2–5)
 
 - **Test pyramid backfill:** chunk 1 landed unit tests on the core; the parity corpus (chunk 3), fuzz + property + E2E matrix (chunk 5), and per-ecosystem fixtures (chunk 2) complete arch §K. Coverage target ≥ 80% lines held per chunk (CTO standard).
@@ -166,3 +200,4 @@
 | Version | Date | Change |
 |---|---|---|
 | v1.0 | 2026-06-16 | Initial build plan by **CTO**. Chunk 1 recorded DONE+green; chunks 2–5 specified with per-chunk DoD mapped to PRD FRs + architecture §A–§L and §K test strategy. Filed alongside the chunk-1 source. |
+| v1.1 | 2026-07-13 | **CTO adds Chunk 6 (v-next, PLAN ONLY, GATED)** per Uri-authorized dispatch: FR-106 install-time remote-code-execution gate — the first fetch-payload + static-scan subsystem (Gate 8: `internal/payload` + `internal/installscan` + `gate8.go`), behind the unchanged `Verdict`/`Engine` seam. Per-ecosystem hook surface (npm/pip/cargo/gem/docker; Go = n/a); HIGH `remote-code-on-install`→block / MEDIUM `install-script-present`→advisory / unparseable→fail-closed. 🔴 Untrusted-payload hardening (decompression-bomb/zip-slip/symlink/SSRF/parser-DoS/no-execution) + **own PH-2b pentest scope**. Zero-dep held for v0 (stdlib archive/scan; TOML/YAML enrichment deferred). Header status updated to chunks 1–5 shipped + v0.1.0 launched. **Build gated on Uri approval + the Chunk-6 pentest-posture decision — no code.** Subsystem design: `knowledge/cto/architecture/penrush-vnext-content-analysis-delta.md`. |
