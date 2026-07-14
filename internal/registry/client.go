@@ -22,7 +22,7 @@ import (
 )
 
 // Version is stamped into the User-Agent by the cli package at build time.
-var Version = "0.1.0-dev"
+var Version = "0.2.0-dev"
 
 // PlaceholderSubdomain: distribution site label on penbag.store is TBD per
 // Uri 2026-06-11 — exactly one constant to change when it lands.

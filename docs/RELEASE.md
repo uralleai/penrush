@@ -16,33 +16,71 @@ This document covers two audiences:
 
 ---
 
-## v-next (unreleased) — Gate 8 / FR-106 install-time content analysis
+## v0.2.0 — FIELD-TEST / PRE-AUDIT (Gate 8 default-on + `--forums`)
 
-**Landed behind a default-OFF flag; NOT part of v0.1.0's shipped scope.** Chunk 6
-adds **Gate 8**, the first gate that fetches a package payload and statically
-scans its install-lifecycle hooks for a fetch-remote-then-execute pattern
-(`internal/payload` + `internal/installscan` + `internal/gate/gate8.go`). It
-rides the unchanged `Verdict`/`Engine` seam and is enabled only by the new
-config key **`gate8_enabled`** (default `false`). With it off, **PenRUSH**
-behavior is byte-identical to v0.1.0 — no payload is ever fetched.
+> **🔴 FIELD-TEST / PRE-AUDIT RELEASE.** v0.2.0 folds in two NEW capabilities to
+> exercise them in the field **before** their formal external security
+> pentest (**PH-2b**). Both surface a one-line FIELD-TEST notice at runtime.
+> Neither is an audited guarantee yet. This build does **not** cross the public
+> boundary until PH-2b passes and the LMO E-items clear (see the release-boundary
+> note above); `git push` remains **GODclaude-only**.
 
-> **🔴 Go-live is gated on its own pentest (PH-2b).** Because Gate 8 fetches and
-> parses *untrusted package payloads* (a materially larger attack surface than
-> v0's metadata-only path — decompression bombs, zip-slip, symlink escape, SSRF,
-> parser-DoS), it does **not** ride v0's PH-2. FR-106 must not be enabled in a
-> shipped configuration until PH-2b (cases PA-1…PA-9) passes.
+### 1. Gate 8 (FR-106) — install-time content analysis, now **ON by default**
 
-**Honest capability limit (verbatim, binding — LMO D-12; ships in every
-user-facing surface when FR-106 goes live).** FR-106 is **static analysis
-only**. It is **evadable by obfuscation** (base64/hex URLs, string
+Chunk 6's **Gate 8** — the first gate that fetches a package payload and
+statically scans its install-lifecycle hooks for a fetch-remote-then-execute
+pattern (`internal/payload` + `internal/installscan` + `internal/gate/gate8.go`)
+— shipped in v0.1.0 behind a default-OFF `gate8_enabled` flag. **v0.2.0 turns it
+ON by default** so a normal `penrush check` (and the Claude Code hook) exercises
+install-time remote-code detection.
+
+- The config key is now three-state: absent (a v0.1.0 config that predates the
+  field) resolves to the v0.2.0 default (**ON**); `"gate8_enabled": false`
+  restores the byte-identical-to-v0.1.0 metadata-only path (no payload fetched).
+- **Fail-closed** behavior is unchanged: any scan error (SSRF reject,
+  decompression bomb, zip-slip, symlink escape, malformed archive, fetch
+  failure, timeout) **BLOCKS**, never silently passes.
+- **Docker deferral (TD-020) unchanged:** a live docker image-config fetch (OCI
+  manifest→config-blob resolution) returns `ErrDockerLiveFetchDeferred` and
+  **fails closed** — a docker check blocks with a clear reason rather than a
+  false pass. Docker RUN-history detection is implemented and tested; the live
+  OCI fetch lands with PH-2b. Tracked in the CTO tech-debt register.
+
+> **🔴 Go-live still gated on PH-2b.** Gate 8 parses *untrusted package payloads*
+> (a materially larger attack surface than v0's metadata-only path). v0.2.0
+> enabling-by-default is for **field testing**, not a signed public release: FR-106
+> must pass PH-2b (cases PA-1…PA-9) before a public v0.2.0 crosses the boundary.
+
+**Honest capability limit (verbatim, binding — LMO D-12).** FR-106 is **static
+analysis only**. It is **evadable by obfuscation** (base64/hex URLs, string
 concatenation, indirection through a downloaded interpreter) and by
 dynamically-constructed commands. It **fails closed on unparseable input**. It
 **raises attacker cost; it is not proof of safety.**
 
-Known deferral: live **Docker** image-config fetch (OCI manifest→config-blob
-resolution) is deferred to the PH-2b follow-up. Docker RUN-history detection is
-implemented and tested; a live docker scan currently fails closed with a clear
-reason rather than silently passing. Tracked in the CTO tech-debt register.
+### 2. `--forums` — opt-in advisory community-forum scan (DSPC Gate 4b)
+
+`penrush check … --forums` runs an **advisory** cross-forum "community review
+research" scan (`internal/forumscan`, a Go port of DSPC Gate 4b): it searches
+five free public forums (Hacker News, Stack Exchange, Lobsters, GitHub
+Discussions, Bluesky) for prior human discussion of the artifact being
+compromised/malicious/hijacked and emits a fail-closed **CLEAN / REVIEW / FLAG**
+verdict (CLEAN requires all five successfully searched with zero hits; any
+unchecked forum → REVIEW; any red-flag hit → FLAG).
+
+- **Opt-in only.** Without `--forums` nothing changes — the gate stays offline.
+- **Advisory.** A **FLAG** means *investigate*; it does **not** change the gate's
+  exit code (the offline gate stays authoritative).
+- **Honest framing** is printed every run: absence of hits is not proof of
+  safety; unchecked forums are named.
+- GitHub Discussions needs a free PAT (`$GITHUB_TOKEN` or `gh auth token`);
+  without one it is marked UNCHECKED, never fabricated clean.
+
+> **⚠️ Site-copy caveat (for the release owner).** `--forums` makes **outbound
+> HTTP** to five public forums. The download site (`site/`) currently states
+> **PenRUSH** makes "zero network calls / collects nothing" — true for the gate,
+> now inaccurate for this opt-in advisory feature. The site copy must be updated
+> to reflect that `--forums` is an opt-in network feature (everything else stays
+> offline, zero-telemetry) before a public v0.2.0 ships.
 
 ---
 

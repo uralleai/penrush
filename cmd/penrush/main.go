@@ -23,9 +23,9 @@ import (
 // per-target .slsa-goreleaser/<os>-<arch>.yml configs; local reproducible-build
 // verification uses the same ldflags (see build.sh / make verify-reproducible).
 //
-//	go build -trimpath -buildvcs=false -ldflags "-s -w -buildid= -X main.version=v0.1.0 -X main.commit=<sha>" ./cmd/penrush
+//	go build -trimpath -buildvcs=false -ldflags "-s -w -buildid= -X main.version=v0.2.0 -X main.commit=<sha>" ./cmd/penrush
 var (
-	version = "0.1.0-dev"
+	version = "0.2.0-dev"
 	commit  = "unknown"
 )
 
