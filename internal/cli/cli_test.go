@@ -107,6 +107,11 @@ func initHome(t *testing.T) string {
 	if code := Run(e); code != ExitPass {
 		t.Fatalf("init setup failed: %d", code)
 	}
+	// The v0.2.0 production default is Gate 8 ON, which would build the live
+	// payload scanner in every check-path test that injects no Gate8Scanner.
+	// The Gate-1 suite is not about content analysis — opt Gate 8 out here so
+	// those tests stay network-free. Gate-8 tests opt back in explicitly.
+	setGate8(t, home, false)
 	return home
 }
 

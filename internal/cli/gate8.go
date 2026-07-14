@@ -11,11 +11,13 @@ import (
 )
 
 // buildGate8 constructs the Gate-8 rider (FR-106) when it is enabled in config.
-// It returns nil when Gate 8 is DISABLED (the default) — the caller then runs
-// exactly the v0.1.0 metadata-only path, byte-for-byte. Gate 8 never alters the
-// launched v0 behavior; it is purely additive and opt-in.
+// It returns nil ONLY when Gate 8 is explicitly disabled (gate8_enabled:false) —
+// the caller then runs exactly the v0.1.0 metadata-only path, byte-for-byte.
+// The v0.2.0 default is ON (config.DefaultGate8Enabled), so a normal check
+// exercises install-time remote-code detection. Gate 8 is purely additive and
+// fail-closed; it never loosens Gate 1.
 func (e *Env) buildGate8(eng *gate.Engine, cfg *config.Config) *gate.Gate8 {
-	if !cfg.Gate8Enabled {
+	if !cfg.Gate8IsEnabled() {
 		return nil
 	}
 	if e.Gate8Scanner != nil {
@@ -52,4 +54,12 @@ func (e *Env) printGate8Verdict(eco, name, version string, v gate.Verdict) {
 	}
 	fmt.Fprintf(e.Stdout, "  gate:   %s (install-time content analysis, FR-106)\n", v.Gate)
 	fmt.Fprintf(e.Stdout, "  reason: %s\n", v.Reason)
+	fmt.Fprintf(e.Stdout, "  note:   %s\n", e.accent(gate8FieldTestNotice))
 }
+
+// gate8FieldTestNotice is the one-line honesty banner surfaced on every Gate-8
+// verdict in this FIELD-TEST / PRE-AUDIT release (v0.2.0). Gate 8 (FR-106) is a
+// NEW capability that has not yet passed its own formal external security
+// pentest (PH-2b); the notice travels with the output so a field-test user is
+// never misled into treating it as an audited guarantee.
+const gate8FieldTestNotice = "FIELD-TEST (v0.2.0, pre-audit): Gate 8 (FR-106) install-time remote-code detection is a NEW capability pending its formal external security pentest (PH-2b)."
