@@ -15,10 +15,12 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"time"
 
+	"github.com/penrush/penrush/internal/forumscan"
 	"github.com/penrush/penrush/internal/gate"
 	"github.com/penrush/penrush/internal/registry"
 )
@@ -33,7 +35,7 @@ const CapabilityNotice = "PenRUSH gates risky installs and raises attacker cost 
 
 // Version is the CLI version string. main.go may override it (ldflags) and it
 // is mirrored into the registry User-Agent.
-var Version = "0.1.0-dev"
+var Version = "0.2.0-dev"
 
 // Commit is the source commit the binary was built from. main.go stamps it via
 // ldflags at release time (deterministic per tag → reproducible-build-safe).
@@ -84,6 +86,10 @@ type Env struct {
 	// leaves it nil and the hardened payload.Scanner is built. It is consulted
 	// ONLY when config gate8_enabled is true.
 	Gate8Scanner gate.PayloadScanner
+	// ForumScan, when non-nil, overrides the advisory `--forums` network scan
+	// (the test seam — a canned aggregate, no network). Production leaves it nil
+	// and forumscan.Scan runs against the live public forums.
+	ForumScan func(ctx context.Context, eco, name string) forumscan.Aggregate
 }
 
 // stdin returns the injected stdin reader (nil when unset).
@@ -124,6 +130,8 @@ Usage:
   penrush init                              create ~/.penrush/ (config, overrides, audit log)
   penrush check <ecosystem> <pkg>[@version]  run the gate against an artifact (dry-run; installs nothing)
   penrush check <ecosystem>:<pkg>[@version]  (FR-007 colon form — equivalent)
+  penrush check ... --forums                 ALSO run the advisory community-forum scan
+                                             (v0.2.0 FIELD-TEST; makes OUTBOUND network calls)
   penrush override add <key> --reason "..."  add an override (key = <ecosystem>:<artifact>)
   penrush stats                             local-only readout of the audit log (no network)
   penrush audit verify [--json]             re-walk the audit chain; exit 3 if tampered (CI/cron-friendly)

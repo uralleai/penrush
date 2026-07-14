@@ -9,6 +9,7 @@ import (
 	"github.com/penrush/penrush/internal/audit"
 	"github.com/penrush/penrush/internal/cache"
 	"github.com/penrush/penrush/internal/config"
+	"github.com/penrush/penrush/internal/forumscan"
 	"github.com/penrush/penrush/internal/gate"
 	"github.com/penrush/penrush/internal/override"
 	"github.com/penrush/penrush/internal/penrushdir"
@@ -27,7 +28,16 @@ var checkEcosystems = []string{"npm", "pypi", "github", "cargo", "gem", "go", "d
 //	penrush check npm left-pad@1.3.0
 //	penrush check npm:left-pad@1.3.0
 func runCheck(e *Env, args []string) int {
-	eco, name, version, perr := parseCheckArgs(args)
+	// --forums is the one accepted flag on check (v0.2.0): an opt-in advisory
+	// community-forum scan. Strip it before positional parsing.
+	rest, forums, ferr := extractForumsFlag(args)
+	if ferr != nil {
+		fmt.Fprintf(e.Stderr, "penrush check: %v\n\nUsage: penrush check <ecosystem> <pkg>[@version] [--forums]\n  ecosystems: %s\n",
+			ferr, strings.Join(checkEcosystems, ", "))
+		return ExitUsageErr
+	}
+
+	eco, name, version, perr := parseCheckArgs(rest)
 	if perr != nil {
 		fmt.Fprintf(e.Stderr, "penrush check: %v\n\nUsage: penrush check <ecosystem> <pkg>[@version]\n  ecosystems: %s\n",
 			perr, strings.Join(checkEcosystems, ", "))
@@ -86,21 +96,60 @@ func runCheck(e *Env, args []string) int {
 	ctx := context.Background()
 	v := eng.CheckGate1(ctx, eco, name, version)
 	e.printVerdict(eco, name, version, v)
-	g1Exit := e.auditAndExit(home, eco, name, version, v, cfg, false)
+	exit := e.auditAndExit(home, eco, name, version, v, cfg, false)
 
-	// Gate 8 (FR-106, v-next): additive content-analysis gate. buildGate8
-	// returns nil when disabled (the default) → behavior is byte-identical to
-	// v0.1.0 and this branch is never entered.
+	// Gate 8 (FR-106): additive install-time content-analysis gate. buildGate8
+	// returns nil ONLY when explicitly disabled → behavior is byte-identical to
+	// v0.1.0. The v0.2.0 default is ON.
 	if g8 := e.buildGate8(eng, cfg); g8 != nil {
 		v8 := g8.Check(ctx, eco, name, version, v.Decision == gate.Block)
 		e.printGate8Verdict(eco, name, version, v8)
 		g8Exit := e.auditAndExit(home, eco, name, version, v8, cfg, false)
-		if g1Exit == ExitBlock || g8Exit == ExitBlock {
-			return ExitBlock
+		if exit == ExitBlock || g8Exit == ExitBlock {
+			exit = ExitBlock
+		} else {
+			exit = ExitPass
 		}
-		return ExitPass
 	}
-	return g1Exit
+
+	// Advisory community-forum scan (opt-in --forums). It makes OUTBOUND network
+	// calls and is purely advisory: a FLAG means investigate, it does NOT change
+	// the gate exit code — the offline gate stays authoritative.
+	if forums {
+		e.runForumScan(ctx, eco, name)
+	}
+
+	return exit
+}
+
+// extractForumsFlag pulls the single supported check flag (--forums) out of the
+// argument list, returning the positional args, whether the flag was set, and an
+// error on any OTHER flag.
+func extractForumsFlag(args []string) (rest []string, forums bool, err error) {
+	for _, a := range args {
+		switch {
+		case a == "--forums":
+			forums = true
+		case strings.HasPrefix(a, "-"):
+			return nil, false, fmt.Errorf("unknown flag %q (check accepts only --forums)", a)
+		default:
+			rest = append(rest, a)
+		}
+	}
+	return rest, forums, nil
+}
+
+// runForumScan runs the advisory community-forum scan and renders it. The
+// production path resolves a GitHub token (env or `gh auth token`) and queries
+// the live public forums; a test injects e.ForumScan to stay hermetic.
+func (e *Env) runForumScan(ctx context.Context, eco, name string) {
+	scan := e.ForumScan
+	if scan == nil {
+		scan = func(ctx context.Context, eco, name string) forumscan.Aggregate {
+			return forumscan.Scan(ctx, name, eco, forumscan.ResolveGitHubToken(""))
+		}
+	}
+	forumscan.Render(e.Stdout, scan(ctx, eco, name), name)
 }
 
 // resolvers builds the per-ecosystem resolver set for this build. A test may
