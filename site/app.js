@@ -15,21 +15,21 @@
      These are NEVER derived from the query string, location, referrer, or any
      other runtime input: a runtime-sourced download base is an open-redirect /
      asset-swap vector (a hostile ?base=… could point "Download" at malware).
-     The signed v0.1.0 release is public, so the gate is open. To re-gate,
+     The signed v0.2.0 release is public, so the gate is open. To re-gate,
      flip RELEASE_AVAILABLE back to false — no other change needed.
      ---------------------------------------------------------------------- */
   var RELEASE_AVAILABLE = true;
-  var RELEASE_BASE_URL  = "https://github.com/uralleai/penrush/releases/download/v0.1.0/";
-  var RELEASE_TAG       = "v0.1.0";
+  var RELEASE_BASE_URL  = "https://github.com/uralleai/penrush/releases/download/v0.2.0/";
+  var RELEASE_TAG       = "v0.2.0";
 
   /* The release "all assets" page — every OS/arch binary + checksums.txt +
      cosign bundle + SLSA provenance. Hardcoded, same rationale as above. */
-  var RELEASE_PAGE_URL  = "https://github.com/uralleai/penrush/releases/tag/v0.1.0";
+  var RELEASE_PAGE_URL  = "https://github.com/uralleai/penrush/releases/tag/v0.2.0";
 
   /* The tagged, immutable verification runbook on GitHub (always resolves). */
-  var RELEASE_DOC_URL   = "https://github.com/uralleai/penrush/blob/v0.1.0/docs/RELEASE.md";
+  var RELEASE_DOC_URL   = "https://github.com/uralleai/penrush/blob/v0.2.0/docs/RELEASE.md";
 
-  /* Published binaries for v0.1.0. Names MUST match the release assets exactly
+  /* Published binaries for v0.2.0. Names MUST match the release assets exactly
      (verified against the release: penrush-{linux,darwin,windows}-{amd64,arm64};
      the Windows asset has no .exe suffix). JS can only resolve the amd64 build
      for the detected OS — see detectPlatform(). */
